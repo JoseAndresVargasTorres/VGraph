@@ -20,7 +20,7 @@ public class Main {
             VGraphLexer lexer = new VGraphLexer(in);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             VGraphParser parser = new VGraphParser(tokens);
-            VGraphParser.StartContext tree = parser.start();
+            VGraphParser.ProgramContext tree = parser.program();
             VGraphCustomVisitor visitor = new VGraphCustomVisitor();
             visitor.visit(tree);
 
