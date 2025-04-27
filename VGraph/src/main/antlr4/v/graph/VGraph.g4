@@ -40,6 +40,12 @@ conditional returns [ASTNode node]:
         $node = new If($expression.node,body,elseifbody,elseBody);
     };
 
+//Declaracion de setcolor
+//setcolor returns [ASTNode node]:;
+
+//Declaracion de draw
+//draw returns [ASTNode node]:;
+
 //Declaracion de variables
 var_decl returns [ASTNode node]:
     PAR_OPEN type PAR_CLOSE id1=ID {
