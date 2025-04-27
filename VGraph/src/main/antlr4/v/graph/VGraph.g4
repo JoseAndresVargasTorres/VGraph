@@ -6,24 +6,15 @@ grammar VGraph;
 }
 
 program:
-    var_decl
-    {
-        Map<String, Object> symbolTable = new HashMap<String,Object>();
-        $var_decl.node.execute(symbolTable);
-    }
-    | var_assign
-    {
-        Map<String, Object> symbolTable = new HashMap<String,Object>();
-        $var_assign.node.execute(symbolTable);
 
-    }|conditional
+    sentence
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
-        $conditional.node.execute(symbolTable);
+        $sentence.node.execute(symbolTable);
     }
 ;
 sentence returns [ASTNode node]:
-    | conditional {$node = $conditional.node;}
+    conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
     | var_assign {$node = $var_assign.node;};
 
@@ -34,11 +25,12 @@ conditional returns [ASTNode node]:
     }
     BRACKET_OPEN (s1=sentence {body.add($s1.node);})* BRACKET_CLOSE
 
-    ELSEIF PAR_OPEN expression PAR_CLOSE
+    ELSEIF
     {
         List<ASTNode> elseifbody = new ArrayList<ASTNode>();
     }
     BRACKET_OPEN (s2=sentence {elseifbody.add($s2.node);})* BRACKET_CLOSE
+
     ELSE
     {
         List<ASTNode> elseBody = new ArrayList<ASTNode>();
@@ -47,14 +39,6 @@ conditional returns [ASTNode node]:
     {
         $node = new If($expression.node,body,elseifbody,elseBody);
     };
-
-
-
-
-
-
-
-
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:

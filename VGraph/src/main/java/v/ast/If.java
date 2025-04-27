@@ -10,7 +10,7 @@ public class If implements ASTNode{
     private List<ASTNode> elseif;
     private List<ASTNode> elseBody;
 
-    public If(ASTNode condition, List<ASTNode> body,List<ASTNode> elseif, List<ASTNode>,List<ASTNode> body,List<ASTNode> elseBody) {
+    public If(ASTNode condition, List<ASTNode> body,List<ASTNode> elseif,List<ASTNode> elseBody) {
         super();
         this.condition = condition;
         this.body = body;
@@ -26,10 +26,11 @@ public class If implements ASTNode{
             for (ASTNode n: body){
                 n.execute(symbolTable);
             }
-        } elseif ((boolean) condition.execute(symbolTable)){
-            for (ASTNode n: body){
+        } else if ((boolean) condition.execute(symbolTable)){
+            for (ASTNode n: elseif) {
                 n.execute(symbolTable);
-        }else {
+            }
+        } else {
             for (ASTNode n: elseBody){
                 n.execute(symbolTable);
             }
