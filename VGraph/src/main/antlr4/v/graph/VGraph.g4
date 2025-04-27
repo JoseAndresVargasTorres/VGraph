@@ -15,8 +15,41 @@ program:
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
         $var_assign.node.execute(symbolTable);
+
+    }|conditional
+    {
+        Map<String, Object> symbolTable = new HashMap<String,Object>();
+        $conditional.node.execute(symbolTable);
     }
 ;
+conditional returns [ASTNode node]:
+    IF PAR_OPEN expression PAR_CLOSE
+    {
+        List<ASTNode> body = new ArrayList<ASTNode>();
+    }
+    BRACKET_OPEN (s1=sentence {body.add($s1.node);})* BRACKET_CLOSE
+
+    ELSEIF PAR_OPEN expression PAR_CLOSE
+    {
+        List<ASTNode> elseifbody = new ArrayList<ASTNode>();
+    }
+    BRACKET_OPEN (s2=sentence {elseifbody.add($s2.node);})* BRACKET_CLOSE
+    ELSE
+    {
+        List<ASTNode> elseBody = new ArrayList<ASTNode>();
+    }
+    BRACKET_OPEN (s3=sentence {elseBody.add($s3.node);})* BRACKET_CLOSE
+    {
+        $node = new If($expression.node,body,elseifbody,elseBody);
+    };
+
+
+
+
+
+
+
+
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:
@@ -81,6 +114,8 @@ term returns [ASTNode node]:
     | sin {$node = $sin.node;}
 ;
 
+
+
 //Comentarios
 
 //Funciones
@@ -103,6 +138,7 @@ SIN: 'sin';
 PIXEL: 'pixel';
 IF: 'if';
 ELSE: 'else';
+ELSEIF: 'elseif';
 PRINTLN: 'println';
 
 //Operadores
