@@ -10,7 +10,13 @@ program:
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
         $var_decl.node.execute(symbolTable);
-    };
+    }
+    | var_assign
+    {
+        Map<String, Object> symbolTable = new HashMap<String,Object>();
+        $var_assign.node.execute(symbolTable);
+    }
+;
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:
@@ -35,8 +41,46 @@ var_assign returns [ASTNode node]:
     {$node = new VarAssign($ID.text,$expression.node);};
 
 //Operaciones
-expression:
+expression returns [ASTNode node]:
+    operand {$node = $operand.node;}
 ;
+
+operand returns [ASTNode node]:
+    t1=factor {$node = $t1.node;}
+    (
+        PLUS t2=factor {$node = new Addition($node,$t2.node);}
+        | MINUS t2=factor {$node = new Subtraction($node,$t2.node);}
+    )*
+;
+
+factor returns [ASTNode node]:
+    t1=term {$node = $t1.node;}
+    (
+        MULT t2=term {$node = new Multiplication($node,$t2.node);}
+        | DIV  t2=term {$node = new Division($node,$t2.node);}
+        | MODULUS t2=term {$node = new Modulus($node,$t2.node);}
+    )*
+;
+
+sin returns [ASTNode node]:
+    SIN PAR_OPEN expression PAR_CLOSE
+    {$node = new Sin($expression.node);}
+;
+
+cos returns [ASTNode node]:
+    COS PAR_OPEN expression PAR_CLOSE
+    {$node = new Cos($expression.node);}
+;
+
+term returns [ASTNode node]:
+    NUMBER {$node = new Constant(Integer.parseInt($NUMBER.text));}
+    | BOOLEAN {$node = new Constant(Boolean.parseBoolean($BOOLEAN.text));}
+    | ID {$node = new VarRef($ID.text);}
+    | PAR_OPEN expression {$node = $expression.node;} PAR_CLOSE
+    | cos {$node = $cos.node;}
+    | sin {$node = $sin.node;}
+;
+
 //Comentarios
 
 //Funciones
