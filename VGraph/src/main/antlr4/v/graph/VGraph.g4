@@ -22,6 +22,11 @@ program:
         $conditional.node.execute(symbolTable);
     }
 ;
+sentence returns [ASTNode node]:
+    | conditional {$node = $conditional.node;}
+    | var_decl  {$node = $var_decl.node;}
+    | var_assign {$node = $var_assign.node;};
+
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
     {
