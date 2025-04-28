@@ -6,18 +6,29 @@ grammar VGraph;
 }
 
 program:
+    s1=sentence
+    {
+        List<ASTNode> runBody = new ArrayList<ASTNode>();
+        runBody.add($s1.node);
 
-    sentence
+    }
+    (s2=sentence  {runBody.add($s2.node);} )*
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
-        $sentence.node.execute(symbolTable);
+        for(ASTNode n : runBody){
+            n.execute(symbolTable);
+        }
     }
 ;
+
+//Sentencias: frames, loops, funciones, Ifs, declaraciones, asignaciones
 sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
-    | var_assign {$node = $var_assign.node;};
+    | var_assign {$node = $var_assign.node;}
+;
 
+//Ifs
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
     {
@@ -38,13 +49,16 @@ conditional returns [ASTNode node]:
     BRACKET_OPEN (s3=sentence {elseBody.add($s3.node);})* BRACKET_CLOSE
     {
         $node = new If($expression.node,body,elseifbody,elseBody);
-    };
+    }
+;
 
 //Declaracion de setcolor
 //setcolor returns [ASTNode node]:;
 
 //Declaracion de draw
 //draw returns [ASTNode node]:;
+
+//Funciones
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:
@@ -57,16 +71,19 @@ var_decl returns [ASTNode node]:
     }
     )*
     SEMICOLON
-    {$node = new VarDecl(decl_map);};
+    {$node = new VarDecl(decl_map);}
+;
 
 type returns [ASTNode node]:
     INT {$node = new Type($INT.text);}
-    | COLOR {$node = new Type($COLOR.text);};
+    | COLOR {$node = new Type($COLOR.text);}
+;
 
 //Asignacion de variables
 var_assign returns [ASTNode node]:
     ID ASSIGN expression SEMICOLON
-    {$node = new VarAssign($ID.text,$expression.node);};
+    {$node = new VarAssign($ID.text,$expression.node);}
+;
 
 //Operaciones
 expression returns [ASTNode node]:
@@ -108,13 +125,6 @@ term returns [ASTNode node]:
     | cos {$node = $cos.node;}
     | sin {$node = $sin.node;}
 ;
-
-
-
-//Comentarios
-
-//Funciones
-
 
 //Palabras clave
 DRAW: 'draw';
@@ -162,14 +172,13 @@ COMA: ',';
 DOT: '.';
 SEMICOLON: ';';
 
-//Comentarios
-HASHTAG: '#';
-
 //tipos
 BOOLEAN: 'true' | 'false';
 INT: 'int';
 COLOR: 'color';
 
+//Comentarios
+HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 
 //Identificadores
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
