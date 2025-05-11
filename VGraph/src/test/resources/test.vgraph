@@ -1,2 +1,8 @@
-(int) x, y, t;
+(int) x;
 (color) c;
+x = 10;
+function test(y){
+    println(y);
+    test(y-1);
+}
+test(x);

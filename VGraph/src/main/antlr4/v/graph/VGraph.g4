@@ -3,6 +3,7 @@ grammar VGraph;
 @parser::header {
     import java.util.Map;
     import java.util.HashMap;
+    import v.ast.*;
 }
 
 program:
@@ -26,6 +27,15 @@ sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
     | var_assign {$node = $var_assign.node;}
+    | function {$node = $function.node;}
+    | funCall {$node = $funCall.node;}
+    | println {$node = $println.node;}
+;
+
+//Prints
+println returns [ASTNode node]:
+    PRINTLN expression SEMICOLON
+    {$node = new Println($expression.node);}
 ;
 
 //Ifs
@@ -59,6 +69,43 @@ conditional returns [ASTNode node]:
 //draw returns [ASTNode node]:;
 
 //Funciones
+function returns [ASTNode node]:
+    FUNCTION funID=ID
+        {
+           List<String> args = new ArrayList<String>();
+           List<ASTNode> sentences = new ArrayList<ASTNode>();
+        }
+        PAR_OPEN
+            (
+                arg1=ID {args.add($arg1.text);}
+                (COMA arg2=ID {args.add($arg2.text);})*
+            )?
+        PAR_CLOSE
+        BRACKET_OPEN
+            s1=sentence {sentences.add($s1.node);}
+            (s2=sentence {sentences.add($s2.node);})*
+        BRACKET_CLOSE
+        {
+            $node = new Function($funID.text,args,sentences);
+        }
+;
+
+//Llamadas a funciones ya creadas
+funCall returns [ASTNode node]:
+    funID=ID
+    {
+        List<ASTNode> args = new ArrayList<ASTNode>();
+    }
+    PAR_OPEN
+        (
+            arg1=expression {args.add($arg1.node);}
+            (COMA arg2=expression {args.add($arg2.node);})*
+        )?
+    PAR_CLOSE
+    {
+        $node = new FunctionCall($funID.text,args);
+    }
+;
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:
@@ -117,8 +164,10 @@ cos returns [ASTNode node]:
     {$node = new Cos($expression.node);}
 ;
 
+//Terminos Basicos
 term returns [ASTNode node]:
     NUMBER {$node = new Constant(Integer.parseInt($NUMBER.text));}
+    | COLOR_VALUES {$node = new Constant(new vColor($COLOR_VALUES.text));}
     | BOOLEAN {$node = new Constant(Boolean.parseBoolean($BOOLEAN.text));}
     | ID {$node = new VarRef($ID.text);}
     | PAR_OPEN expression {$node = $expression.node;} PAR_CLOSE
@@ -145,6 +194,7 @@ IF: 'if';
 ELSE: 'else';
 ELSEIF: 'elseif';
 PRINTLN: 'println';
+FUNCTION: 'function';
 
 //Operadores
 PLUS: '+';
@@ -176,6 +226,7 @@ SEMICOLON: ';';
 BOOLEAN: 'true' | 'false';
 INT: 'int';
 COLOR: 'color';
+COLOR_VALUES:'negro'| 'blanco'| 'rojo'| 'verde'| 'azul'| 'amarillo'| 'cyan'| 'magenta'| 'marron';
 
 //Comentarios
 HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
