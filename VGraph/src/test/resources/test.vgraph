@@ -1,8 +1,9 @@
-(int) x;
-(color) c;
-x = 10;
-function test(y){
-    println(y);
-    test(y-1);
+(int) i;
+
+loop (i = 0; i <= 10; i = i + 1) {
+    println(i);
+    wait(5);
+    i = i + 5;
+    println(3);
+
 }
-test(x);

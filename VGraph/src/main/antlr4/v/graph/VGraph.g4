@@ -30,6 +30,8 @@ sentence returns [ASTNode node]:
     | function {$node = $function.node;}
     | funCall {$node = $funCall.node;}
     | println {$node = $println.node;}
+    | loop_command {$node = $loop_command.node;}
+    | wait_command {$node = $wait_command.node;}
 ;
 
 //Prints
@@ -38,6 +40,39 @@ println returns [ASTNode node]:
     {$node = new Println($expression.node);}
 ;
 
+
+//**************************************************************************************************************************************
+wait_command returns [ASTNode node]:
+    WAIT PAR_OPEN e=expression PAR_CLOSE SEMICOLON {$node = new WaitComm($e.node);}
+;
+
+clear_command returns [ASTNode node]:
+CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+
+loop_command returns [ASTNode node]
+: LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
+    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
+
+body returns [List<ASTNode> list]
+@init {
+    $list = new ArrayList<ASTNode>();
+}
+: (s=sentence { $list.add($s.node); })*;
+
+increment_loop returns [ASTNode node]:
+    ID ASSIGN expression
+    {$node = new VarAssign($ID.text,$expression.node);}
+;
+
+comparison returns [ASTNode node]:
+     e1=expression GT e2=expression {$node = new GreaterThan($e1.node,$e2.node);}
+    | e1=expression LT e2=expression {$node = new LessThan($e1.node,$e2.node);}
+    | e1=expression GEQ e2=expression {$node = new GreaterOrEqual($e1.node,$e2.node);}
+    | e1=expression LEQ e2=expression {$node = new LessOrEqual($e1.node,$e2.node);}
+    | e1=expression EQ e2=expression {$node = new Equal($e1.node,$e2.node);}
+    | e1=expression NEQ e2=expression {$node = new NotEqual($e1.node,$e2.node);}
+    ;
+//**************************************************************************************************************************************
 //Ifs
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
@@ -195,6 +230,7 @@ ELSE: 'else';
 ELSEIF: 'elseif';
 PRINTLN: 'println';
 FUNCTION: 'function';
+CLEAR: 'clear';
 
 //Operadores
 PLUS: '+';

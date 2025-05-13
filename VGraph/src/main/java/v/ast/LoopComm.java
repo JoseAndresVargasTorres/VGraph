@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 public class LoopComm implements ASTNode{
-    private ASTNode init; //VarDecl
+    private ASTNode init; //VarAssinginicial
     private ASTNode condition; // Comparación
     private ASTNode update; //VarAssign
     private List<ASTNode> body;
