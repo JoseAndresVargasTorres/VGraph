@@ -7,17 +7,52 @@ grammar VGraph;
 
 program:
 
-    sentence
+    (sentence
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
         $sentence.node.execute(symbolTable);
-    }
+    })*
 ;
 sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
-    | var_assign {$node = $var_assign.node;};
+    | var_assign {$node = $var_assign.node;}
+    | wait_command {$node = $wait_command.node;}
+    | comparison {$node = $comparison.node;}
+    | loop_command {$node = $loop_command.node;}
+    | println {$node = $println.node;};
 
+wait_command returns [ASTNode node]:
+    WAIT PAR_OPEN e=expression PAR_CLOSE SEMICOLON {$node = new WaitComm($e.node);}
+;
+
+clear_command returns [ASTNode node]:
+CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+
+println returns [ASTNode node]:
+    PRINTLN expression SEMICOLON {$node = new Println($expression.node);}
+    | PRINTLN clear_command SEMICOLON {$node = new Println($clear_command.node);}
+    ;
+
+loop_command returns [ASTNode node]
+: LOOP PAR_OPEN e1=var_decl e2=comparison SEMICOLON e3=var_assign
+    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
+
+body returns [List<ASTNode> list]
+@init {
+    $list = new ArrayList<ASTNode>();
+}
+: (s=sentence { $list.add($s.node); })*;
+
+comparison returns [ASTNode node]:
+     e1=expression GT e2=expression {$node = new GreaterThan($e1.node,$e2.node);}
+    | e1=expression LT e2=expression {$node = new LessThan($e1.node,$e2.node);}
+    | e1=expression GEQ e2=expression {$node = new GreaterOrEqual($e1.node,$e2.node);}
+    | e1=expression LEQ e2=expression {$node = new LessOrEqual($e1.node,$e2.node);}
+    | e1=expression EQ e2=expression {$node = new Equal($e1.node,$e2.node);}
+    | e1=expression NEQ e2=expression {$node = new NotEqual($e1.node,$e2.node);}
+    ;
+//*****************************************************************************************************************************************************************
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
     {
@@ -107,6 +142,7 @@ term returns [ASTNode node]:
     | PAR_OPEN expression {$node = $expression.node;} PAR_CLOSE
     | cos {$node = $cos.node;}
     | sin {$node = $sin.node;}
+
 ;
 
 
@@ -135,6 +171,7 @@ IF: 'if';
 ELSE: 'else';
 ELSEIF: 'elseif';
 PRINTLN: 'println';
+CLEAR: 'clear';
 
 //Operadores
 PLUS: '+';

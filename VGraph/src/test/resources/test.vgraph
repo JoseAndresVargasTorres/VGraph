@@ -1,2 +1,5 @@
-(int) x, y, t;
-(color) c;
+loop((int) j; 2 != 1; j = j + 1;) {
+    println 3;
+    println 4;
+}
+println 5;
