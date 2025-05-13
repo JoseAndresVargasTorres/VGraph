@@ -1,5 +1,8 @@
-loop((int) j; 2 != 1; j = j + 1;) {
-    println 3;
-    println 4;
+(int) x;
+(color) c;
+x = 10;
+function test(y){
+    println(y);
+    test(y-1);
 }
-println 5;
+test(x);
