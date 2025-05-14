@@ -105,6 +105,7 @@ funCall returns [ASTNode node]:
     {
         $node = new FunctionCall($funID.text,args);
     }
+    SEMICOLON
 ;
 
 //Declaracion de variables

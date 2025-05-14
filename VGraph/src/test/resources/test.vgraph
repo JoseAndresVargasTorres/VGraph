@@ -5,4 +5,3 @@ function test(y){
     println(y);
     test(y-1);
 }
-test(x);
