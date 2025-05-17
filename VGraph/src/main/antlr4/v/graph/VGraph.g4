@@ -29,7 +29,7 @@ sentence returns [ASTNode node]:
     | var_assign {$node = $var_assign.node;}
     | setcolor {$node = $setcolor.node;}
     | draw {$node = $draw.node;}
-    | shapeCall {$node = $shapeCall.node;};
+    | shapeCall {$node = $shapeCall.node;}
     | function {$node = $function.node;}
     | funCall {$node = $funCall.node;}
     | println {$node = $println.node;}
