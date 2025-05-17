@@ -27,6 +27,9 @@ sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
     | var_assign {$node = $var_assign.node;}
+    | setcolor {$node = $setcolor.node;}
+    | draw {$node = $draw.node;}
+    | shapeCall {$node = $shapeCall.node;};
     | function {$node = $function.node;}
     | funCall {$node = $funCall.node;}
     | println {$node = $println.node;}
@@ -48,6 +51,7 @@ wait_command returns [ASTNode node]:
 
 clear_command returns [ASTNode node]:
 CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+
 
 loop_command returns [ASTNode node]
 : LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
@@ -97,11 +101,47 @@ conditional returns [ASTNode node]:
     }
 ;
 
+//declaracion de frame
+frame returns [ASTNode node]:
+     FRAME PAR_OPEN se=sentence PAR_CLOSE
+          {
+            $node = new Frame($se.node);
+          };
+
 //Declaracion de setcolor
-//setcolor returns [ASTNode node]:;
+setcolor returns [ASTNode node]:
+     SETCOLOR PAR_OPEN t=expression PAR_CLOSE
+          {
+            $node = new Setcolor($t.node);
+          };
 
 //Declaracion de draw
-//draw returns [ASTNode node]:;
+draw returns [ASTNode node]:
+    DRAW PAR_OPEN s=shapeCall PAR_CLOSE
+    {
+         $node = new shapeCall($s.node);
+    };
+
+shapeCall returns [ASTNode node]:
+    LINE PAR_OPEN a=expression COMA b=expression COMA c=expression COMA d=expression PAR_CLOSE
+        {
+            $node = new DrawLine($a.node, $b.node, $c.node, $d.node);
+        }
+    |RECT PAR_OPEN x=expression COMA y=expression COMA w=expression COMA h=expression PAR_CLOSE
+        {
+            $node = new DrawRect($x.node, $y.node, $w.node, $h.node);
+        }
+
+    |CIRCLE PAR_OPEN x=expression COMA y=expression COMA r=expression PAR_CLOSE
+        {
+            $node = new DrawCircle($x.node, $y.node, $r.node);
+        }
+
+    | PIXEL PAR_OPEN x=expression COMA y=expression PAR_CLOSE
+        {
+            $node = new DrawPixel($x.node, $y.node);
+        };
+
 
 //Funciones
 function returns [ASTNode node]:
@@ -249,6 +289,7 @@ EQ: '==';
 NEQ: '!=';
 ASSIGN: '=';
 
+
 //Delimitadores
 BRACKET_OPEN: '{';
 BRACKET_CLOSE: '}';
@@ -265,6 +306,7 @@ INT: 'int';
 COLOR: 'color';
 COLOR_VALUES:'negro'| 'blanco'| 'rojo'| 'verde'| 'azul'| 'amarillo'| 'cyan'| 'magenta'| 'marron';
 
+
 //Comentarios
 HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 
@@ -274,3 +316,4 @@ ID: [a-zA-Z_][a-zA-Z0-9_]*;
 NUMBER: [0-9]+;
 
 WS: [ \t\n\r]+ -> skip;
+
