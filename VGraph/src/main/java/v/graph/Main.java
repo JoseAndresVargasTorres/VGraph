@@ -16,11 +16,11 @@ public class Main {
         for (String file : files){
             System.out.println("START: " + file);
 
-            CharStream in = CharStreams.fromFileName(DIRBASE + file);
+            CharStream in = CharStreams.fromFileName("C:\\Users\\Gaby\\Documents\\VII semestre\\Compi\\Proyecto\\VGraph\\VGraph\\src\\test\\resources\\test.vgraph");
             VGraphLexer lexer = new VGraphLexer(in);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             VGraphParser parser = new VGraphParser(tokens);
-            VGraphParser.StartContext tree = parser.start();
+            VGraphParser.ProgramContext tree = parser.program();
             VGraphCustomVisitor visitor = new VGraphCustomVisitor();
             visitor.visit(tree);
 
