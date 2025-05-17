@@ -8,7 +8,7 @@
     <name>VGraph</name>
     <packaging>jar</packaging>
     <properties>
-        <antlr4.version>4.9.2</antlr4.version>
+        <antlr4.version>4.13.2</antlr4.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencies>

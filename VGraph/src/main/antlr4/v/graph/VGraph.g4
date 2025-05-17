@@ -3,16 +3,26 @@ grammar VGraph;
 @parser::header {
     import java.util.Map;
     import java.util.HashMap;
+    import v.ast.*;
 }
 
 program:
+    s1=sentence
+    {
+        List<ASTNode> runBody = new ArrayList<ASTNode>();
+        runBody.add($s1.node);
 
-    sentence
+    }
+    (s2=sentence  {runBody.add($s2.node);} )*
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
-        $sentence.node.execute(symbolTable);
+        for(ASTNode n : runBody){
+            n.execute(symbolTable);
+        }
     }
 ;
+
+//Sentencias: frames, loops, funciones, Ifs, declaraciones, asignaciones
 sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
@@ -20,7 +30,54 @@ sentence returns [ASTNode node]:
     | setcolor {$node = $setcolor.node;}
     | draw {$node = $draw.node;}
     | shapeCall {$node = $shapeCall.node;};
+    | function {$node = $function.node;}
+    | funCall {$node = $funCall.node;}
+    | println {$node = $println.node;}
+    | loop_command {$node = $loop_command.node;}
+    | wait_command {$node = $wait_command.node;}
+;
 
+//Prints
+println returns [ASTNode node]:
+    PRINTLN expression SEMICOLON
+    {$node = new Println($expression.node);}
+;
+
+
+//**************************************************************************************************************************************
+wait_command returns [ASTNode node]:
+    WAIT PAR_OPEN e=expression PAR_CLOSE SEMICOLON {$node = new WaitComm($e.node);}
+;
+
+clear_command returns [ASTNode node]:
+CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+
+
+loop_command returns [ASTNode node]
+: LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
+    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
+
+body returns [List<ASTNode> list]
+@init {
+    $list = new ArrayList<ASTNode>();
+}
+: (s=sentence { $list.add($s.node); })*;
+
+increment_loop returns [ASTNode node]:
+    ID ASSIGN expression
+    {$node = new VarAssign($ID.text,$expression.node);}
+;
+
+comparison returns [ASTNode node]:
+     e1=expression GT e2=expression {$node = new GreaterThan($e1.node,$e2.node);}
+    | e1=expression LT e2=expression {$node = new LessThan($e1.node,$e2.node);}
+    | e1=expression GEQ e2=expression {$node = new GreaterOrEqual($e1.node,$e2.node);}
+    | e1=expression LEQ e2=expression {$node = new LessOrEqual($e1.node,$e2.node);}
+    | e1=expression EQ e2=expression {$node = new Equal($e1.node,$e2.node);}
+    | e1=expression NEQ e2=expression {$node = new NotEqual($e1.node,$e2.node);}
+    ;
+//**************************************************************************************************************************************
+//Ifs
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
     {
@@ -41,7 +98,8 @@ conditional returns [ASTNode node]:
     BRACKET_OPEN (s3=sentence {elseBody.add($s3.node);})* BRACKET_CLOSE
     {
         $node = new If($expression.node,body,elseifbody,elseBody);
-    };
+    }
+;
 
 //declaracion de frame
 frame returns [ASTNode node]:
@@ -52,16 +110,10 @@ frame returns [ASTNode node]:
 
 //Declaracion de setcolor
 setcolor returns [ASTNode node]:
-     SETCOLOR PAR_OPEN t=color PAR_CLOSE
+     SETCOLOR PAR_OPEN t=expression PAR_CLOSE
           {
             $node = new Setcolor($t.node);
           };
-
-color returns [ASTNode node]:
-
-     COLOR {$node = new Type($COLOR.text);};
-
-
 
 //Declaracion de draw
 draw returns [ASTNode node]:
@@ -91,6 +143,46 @@ shapeCall returns [ASTNode node]:
         };
 
 
+//Funciones
+function returns [ASTNode node]:
+    FUNCTION funID=ID
+        {
+           List<String> args = new ArrayList<String>();
+           List<ASTNode> sentences = new ArrayList<ASTNode>();
+        }
+        PAR_OPEN
+            (
+                arg1=ID {args.add($arg1.text);}
+                (COMA arg2=ID {args.add($arg2.text);})*
+            )?
+        PAR_CLOSE
+        BRACKET_OPEN
+            s1=sentence {sentences.add($s1.node);}
+            (s2=sentence {sentences.add($s2.node);})*
+        BRACKET_CLOSE
+        {
+            $node = new Function($funID.text,args,sentences);
+        }
+;
+
+//Llamadas a funciones ya creadas
+funCall returns [ASTNode node]:
+    funID=ID
+    {
+        List<ASTNode> args = new ArrayList<ASTNode>();
+    }
+    PAR_OPEN
+        (
+            arg1=expression {args.add($arg1.node);}
+            (COMA arg2=expression {args.add($arg2.node);})*
+        )?
+    PAR_CLOSE
+    {
+        $node = new FunctionCall($funID.text,args);
+    }
+    SEMICOLON
+;
+
 //Declaracion de variables
 var_decl returns [ASTNode node]:
     PAR_OPEN type PAR_CLOSE id1=ID {
@@ -102,15 +194,19 @@ var_decl returns [ASTNode node]:
     }
     )*
     SEMICOLON
-    {$node = new VarDecl(decl_map);};
+    {$node = new VarDecl(decl_map);}
+;
 
 type returns [ASTNode node]:
-    INT {$node = new Type($INT.text);};
+    INT {$node = new Type($INT.text);}
+    | COLOR {$node = new Type($COLOR.text);}
+;
 
 //Asignacion de variables
 var_assign returns [ASTNode node]:
     ID ASSIGN expression SEMICOLON
-    {$node = new VarAssign($ID.text,$expression.node);};
+    {$node = new VarAssign($ID.text,$expression.node);}
+;
 
 //Operaciones
 expression returns [ASTNode node]:
@@ -144,21 +240,16 @@ cos returns [ASTNode node]:
     {$node = new Cos($expression.node);}
 ;
 
+//Terminos Basicos
 term returns [ASTNode node]:
     NUMBER {$node = new Constant(Integer.parseInt($NUMBER.text));}
+    | COLOR_VALUES {$node = new Constant(new vColor($COLOR_VALUES.text));}
     | BOOLEAN {$node = new Constant(Boolean.parseBoolean($BOOLEAN.text));}
     | ID {$node = new VarRef($ID.text);}
     | PAR_OPEN expression {$node = $expression.node;} PAR_CLOSE
     | cos {$node = $cos.node;}
     | sin {$node = $sin.node;}
 ;
-
-
-
-//Comentarios
-
-//Funciones
-
 
 //Palabras clave
 DRAW: 'draw';
@@ -179,6 +270,8 @@ IF: 'if';
 ELSE: 'else';
 ELSEIF: 'elseif';
 PRINTLN: 'println';
+FUNCTION: 'function';
+CLEAR: 'clear';
 
 //Operadores
 PLUS: '+';
@@ -207,14 +300,15 @@ COMA: ',';
 DOT: '.';
 SEMICOLON: ';';
 
-//Comentarios
-HASHTAG: '#';
-
 //tipos
 BOOLEAN: 'true' | 'false';
 INT: 'int';
-COLOR: 'rojo' | 'verde' | 'azul' | 'amarillo'| 'cyan'| 'magenta' | 'blanco' | 'marron ';
+COLOR: 'color';
+COLOR_VALUES:'negro'| 'blanco'| 'rojo'| 'verde'| 'azul'| 'amarillo'| 'cyan'| 'magenta'| 'marron';
 
+
+//Comentarios
+HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 
 //Identificadores
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
