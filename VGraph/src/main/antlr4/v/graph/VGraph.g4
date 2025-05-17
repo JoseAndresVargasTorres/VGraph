@@ -27,9 +27,14 @@ sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
     | var_assign {$node = $var_assign.node;}
+    | setcolor {$node = $setcolor.node;}
+    | draw {$node = $draw.node;}
+    | shapeCall {$node = $shapeCall.node;};
     | function {$node = $function.node;}
     | funCall {$node = $funCall.node;}
     | println {$node = $println.node;}
+    | loop_command {$node = $loop_command.node;}
+    | wait_command {$node = $wait_command.node;}
 ;
 
 //Prints
@@ -38,6 +43,40 @@ println returns [ASTNode node]:
     {$node = new Println($expression.node);}
 ;
 
+
+//**************************************************************************************************************************************
+wait_command returns [ASTNode node]:
+    WAIT PAR_OPEN e=expression PAR_CLOSE SEMICOLON {$node = new WaitComm($e.node);}
+;
+
+clear_command returns [ASTNode node]:
+CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+
+
+loop_command returns [ASTNode node]
+: LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
+    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
+
+body returns [List<ASTNode> list]
+@init {
+    $list = new ArrayList<ASTNode>();
+}
+: (s=sentence { $list.add($s.node); })*;
+
+increment_loop returns [ASTNode node]:
+    ID ASSIGN expression
+    {$node = new VarAssign($ID.text,$expression.node);}
+;
+
+comparison returns [ASTNode node]:
+     e1=expression GT e2=expression {$node = new GreaterThan($e1.node,$e2.node);}
+    | e1=expression LT e2=expression {$node = new LessThan($e1.node,$e2.node);}
+    | e1=expression GEQ e2=expression {$node = new GreaterOrEqual($e1.node,$e2.node);}
+    | e1=expression LEQ e2=expression {$node = new LessOrEqual($e1.node,$e2.node);}
+    | e1=expression EQ e2=expression {$node = new Equal($e1.node,$e2.node);}
+    | e1=expression NEQ e2=expression {$node = new NotEqual($e1.node,$e2.node);}
+    ;
+//**************************************************************************************************************************************
 //Ifs
 conditional returns [ASTNode node]:
     IF PAR_OPEN expression PAR_CLOSE
@@ -62,11 +101,47 @@ conditional returns [ASTNode node]:
     }
 ;
 
+//declaracion de frame
+frame returns [ASTNode node]:
+     FRAME PAR_OPEN se=sentence PAR_CLOSE
+          {
+            $node = new Frame($se.node);
+          };
+
 //Declaracion de setcolor
-//setcolor returns [ASTNode node]:;
+setcolor returns [ASTNode node]:
+     SETCOLOR PAR_OPEN t=expression PAR_CLOSE
+          {
+            $node = new Setcolor($t.node);
+          };
 
 //Declaracion de draw
-//draw returns [ASTNode node]:;
+draw returns [ASTNode node]:
+    DRAW PAR_OPEN s=shapeCall PAR_CLOSE
+    {
+         $node = new shapeCall($s.node);
+    };
+
+shapeCall returns [ASTNode node]:
+    LINE PAR_OPEN a=expression COMA b=expression COMA c=expression COMA d=expression PAR_CLOSE
+        {
+            $node = new DrawLine($a.node, $b.node, $c.node, $d.node);
+        }
+    |RECT PAR_OPEN x=expression COMA y=expression COMA w=expression COMA h=expression PAR_CLOSE
+        {
+            $node = new DrawRect($x.node, $y.node, $w.node, $h.node);
+        }
+
+    |CIRCLE PAR_OPEN x=expression COMA y=expression COMA r=expression PAR_CLOSE
+        {
+            $node = new DrawCircle($x.node, $y.node, $r.node);
+        }
+
+    | PIXEL PAR_OPEN x=expression COMA y=expression PAR_CLOSE
+        {
+            $node = new DrawPixel($x.node, $y.node);
+        };
+
 
 //Funciones
 function returns [ASTNode node]:
@@ -105,6 +180,7 @@ funCall returns [ASTNode node]:
     {
         $node = new FunctionCall($funID.text,args);
     }
+    SEMICOLON
 ;
 
 //Declaracion de variables
@@ -195,6 +271,7 @@ ELSE: 'else';
 ELSEIF: 'elseif';
 PRINTLN: 'println';
 FUNCTION: 'function';
+CLEAR: 'clear';
 
 //Operadores
 PLUS: '+';
@@ -212,6 +289,7 @@ EQ: '==';
 NEQ: '!=';
 ASSIGN: '=';
 
+
 //Delimitadores
 BRACKET_OPEN: '{';
 BRACKET_CLOSE: '}';
@@ -228,6 +306,7 @@ INT: 'int';
 COLOR: 'color';
 COLOR_VALUES:'negro'| 'blanco'| 'rojo'| 'verde'| 'azul'| 'amarillo'| 'cyan'| 'magenta'| 'marron';
 
+
 //Comentarios
 HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 
@@ -237,3 +316,4 @@ ID: [a-zA-Z_][a-zA-Z0-9_]*;
 NUMBER: [0-9]+;
 
 WS: [ \t\n\r]+ -> skip;
+

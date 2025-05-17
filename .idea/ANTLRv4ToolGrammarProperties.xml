@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="ANTLRGenerationPreferences">
+  <component name="ANTLRv4ToolGrammarProperties">
     <option name="perGrammarGenerationSettings">
       <list>
         <PerGrammarGenerationSettings>
           <option name="fileName" value="$PROJECT_DIR$/VGraph/src/main/antlr4/v/graph/VGraph.g4" />
           <option name="autoGen" value="true" />
-          <option name="outputDir" value="$PROJECT_DIR$/VGraph/src/main/java/v/graph" />
+          <option name="outputDir" value="C:\Users\Gaby\Documents\VII semestre\Compi\Proyecto\VGraph\VGraph\src\main\java\v\graph" />
           <option name="libDir" value="" />
           <option name="encoding" value="" />
           <option name="pkg" value="" />
@@ -15,16 +15,5 @@
         </PerGrammarGenerationSettings>
       </list>
     </option>
-  </component>
-  <component name="ExternalStorageConfigurationManager" enabled="true" />
-  <component name="MavenProjectsManager">
-    <option name="originalFiles">
-      <list>
-        <option value="$PROJECT_DIR$/VGraph/pom.xml" />
-      </list>
-    </option>
-  </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="24" project-jdk-type="JavaSDK">
-    <output url="file://$PROJECT_DIR$/out" />
   </component>
 </project>
