@@ -1,3 +1,6 @@
+package v.ast;
+import java.util.Map;
+
 public class DrawCircle extends Draw {
     private final ASTNode x1, y1, r1;
 
@@ -7,13 +10,10 @@ public class DrawCircle extends Draw {
         this.r1 = r1;
     }
     @Override
-    public Object execute(Context ctx) {
-        int xStart = (Integer) x1.execute(ctx);
-        int yStart = (Integer) y1.execute(ctx);
-        int rEnd = (Integer) r1.execute(ctx);
-
-
+    public Object execute(Map<String, Object> symbolTable) {
+        int xStart = (Integer) x1.execute(symbolTable);
+        int yStart = (Integer) y1.execute(symbolTable);
+        int rEnd = (Integer) r1.execute(symbolTable);
         return null;
-
     }
 }

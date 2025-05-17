@@ -1,3 +1,6 @@
+package v.ast;
+import java.util.Map;
+
 public class DrawRect extends Draw {
     private final ASTNode x,y,w,h;
 
@@ -8,11 +11,11 @@ public class DrawRect extends Draw {
         this.h = h;
     }
     @Override
-    public Object execute(Context ctx) {
-        int xStart = (Integer) x.execute(ctx);
-        int yStart = (Integer) y.execute(ctx);
-        int wid= (Integer) w.execute(ctx);
-        int hi= (Integer) h.execute(ctx);
+    public Object execute(Map<String, Object> symbolTable) {
+        int xStart = (Integer) x.execute(symbolTable);
+        int yStart = (Integer) y.execute(symbolTable);
+        int wid= (Integer) w.execute(symbolTable);
+        int hi= (Integer) h.execute(symbolTable);
 
         return null;
     }

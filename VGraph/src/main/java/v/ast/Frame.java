@@ -1,4 +1,7 @@
-public class Frame extends ASTNode {
+package v.ast;
+import java.util.Map;
+
+public class Frame implements ASTNode {
     private final ASTNode sentence;
 
     public Frame(ASTNode sentence) {
@@ -6,10 +9,10 @@ public class Frame extends ASTNode {
     }
 
     @Override
-    public Object execute(Context ctx) {
+    public Object execute(Map<String, Object> symbolTable) {
 
         if (sentence != null) {
-            sentence.execute(ctx);
+            sentence.execute(symbolTable);
         }
         return null;
     }
