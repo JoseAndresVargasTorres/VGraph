@@ -38,4 +38,13 @@ build/
 .DS_Store
 
 ### Ignore ANTRL4 classes ###
-src/main/java/v/graph/*
+src/main/java/v/graph/VGraph.interp
+src/main/java/v/graph/VGraph.tokens
+src/main/java/v/graph/VGraphBaseListener.java
+src/main/java/v/graph/VGraphBaseVisitor.java
+src/main/java/v/graph/VGraphLexer.java
+src/main/java/v/graph/VGraphLexer.interp
+src/main/java/v/graph/VGraphLexer.tokens
+src/main/java/v/graph/VGraphListener.java
+src/main/java/v/graph/VGraphParser.java
+src/main/java/v/graph/VGraphVisitor.java
