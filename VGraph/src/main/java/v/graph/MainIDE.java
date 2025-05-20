@@ -2,410 +2,746 @@ package v.graph;
 
 import javax.swing.*;
 import javax.swing.border.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.text.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-// Importaciones de ANTLR simplificadas - solo las necesarias
+// Importaciones de ANTLR
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.ANTLRErrorListener;
+import org.antlr.v4.runtime.Parser;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.TokenStream;
+import org.antlr.v4.runtime.atn.ATNConfigSet;
+import org.antlr.v4.runtime.dfa.DFA;
+import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.antlr.v4.runtime.misc.Interval;
 
 public class MainIDE extends JFrame {
-    // Componentes de la interfaz
-    private JTextArea codeTextArea;
-    private JTextArea consoleTextArea;
-    private JScrollPane codeScrollPane;
-    private final String DEFAULT_EXTENSION = ".vgraph";
-    private final String WINDOW_TITLE = "VGraph IDE";
-    private String currentFilePath;
-    private boolean isFileSaved = false;
-    private boolean isCompiled = false;
+    private JTextArea codeArea;
+    private JTextArea lineNumbers;
+    private JTextArea errorArea;
+    private JButton compileButton;
+    private JButton loadButton;
+    private JButton saveButton;
+    private JButton runButton;
+    private JFileChooser fileChooser;
+    private File currentFile;
+    private static final String EXTENSION = "vgraph";
+    private static final String DIRBASE = "src/test/resources/";
 
-    // Colores básicos
-    private final Color CONSOLE_ERROR_COLOR = new Color(255, 0, 0);
-    private final Color CONSOLE_SUCCESS_COLOR = new Color(0, 128, 0);
-    private final Color CONSOLE_WARNING_COLOR = new Color(255, 165, 0);
+    // Clase personalizada para capturar y manejar errores de ANTLR
+    private static class VGraphErrorListener implements ANTLRErrorListener {
+        private List<String> syntaxErrors = new ArrayList<>();
+        private JTextArea errorOutput;
+        private String sourceCode;
 
-    // Variable para resultados de compilación
-    private VGraphCustomVisitor visitor;
+        public VGraphErrorListener(JTextArea errorOutput, String sourceCode) {
+            this.errorOutput = errorOutput;
+            this.sourceCode = sourceCode;
+        }
+
+        @Override
+        public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol,
+                                int line, int charPositionInLine, String msg, RecognitionException e) {
+            String errorMsg = "Error en línea " + line + ":" + charPositionInLine + " - " + msg;
+
+            // Recuperar el contexto de la línea para mostrar el error
+            String lineContext = getLineFromSource(line);
+            if (lineContext != null) {
+                errorMsg += "\nCódigo: " + lineContext.trim();
+            }
+
+            // Análisis más específico de errores comunes
+            if (msg.contains("missing ';'") || msg.contains("mismatched input")) {
+                errorMsg += "\nFalta un punto y coma (;) o hay un error de sintaxis en esta línea.";
+            } else if (offendingSymbol != null && offendingSymbol instanceof Token) {
+                Token token = (Token) offendingSymbol;
+
+                // Verificar operaciones incompletas
+                if (token.getType() == VGraphLexer.PLUS ||
+                        token.getType() == VGraphLexer.MINUS ||
+                        token.getType() == VGraphLexer.MULT ||
+                        token.getType() == VGraphLexer.DIV ||
+                        token.getType() == VGraphLexer.MODULUS) {
+                    errorMsg += "\nOperación incompleta: falta el operando después de '" + token.getText() + "'";
+                }
+
+                // Verificar asignaciones incompletas
+                if (token.getType() == VGraphLexer.ASSIGN &&
+                        token.getText().equals("=") &&
+                        msg.contains("expecting")) {
+                    errorMsg += "\nAsignación incompleta: falta la expresión después del '='";
+                }
+
+                // Verificar estructura incorrecta de bucles
+                if (token.getType() == VGraphLexer.LOOP) {
+                    errorMsg += "\nPosible problema en la estructura del bucle. Revise la sintaxis:";
+                    errorMsg += "\nloop (inicialización; comparación; incremento) { cuerpo }";
+                }
+
+                // Verificar estructura de condicionales
+                if (token.getType() == VGraphLexer.IF ||
+                        token.getType() == VGraphLexer.ELSE ||
+                        token.getType() == VGraphLexer.ELSEIF) {
+                    errorMsg += "\nPosible problema en la estructura del condicional.";
+                }
+            }
+
+            syntaxErrors.add(errorMsg);
+
+            // Imprimir error en área de errores
+            if (errorOutput != null) {
+                errorOutput.append(errorMsg + "\n\n");
+            }
+        }
+
+        // Obtener el texto de la línea específica del código fuente
+        private String getLineFromSource(int lineNumber) {
+            if (sourceCode == null || sourceCode.isEmpty()) {
+                return null;
+            }
+
+            String[] lines = sourceCode.split("\n");
+            if (lineNumber > 0 && lineNumber <= lines.length) {
+                return lines[lineNumber - 1];
+            }
+            return null;
+        }
+
+        @Override
+        public void reportAmbiguity(Parser parser, DFA dfa, int startIndex, int stopIndex, boolean exact, java.util.BitSet ambigAlts, ATNConfigSet configs) {}
+
+        @Override
+        public void reportAttemptingFullContext(Parser parser, DFA dfa, int startIndex, int stopIndex, java.util.BitSet conflictingAlts, ATNConfigSet configs) {}
+
+        @Override
+        public void reportContextSensitivity(Parser parser, DFA dfa, int startIndex, int stopIndex, int prediction, ATNConfigSet configs) {}
+
+        public List<String> getSyntaxErrors() {
+            return syntaxErrors;
+        }
+
+        public boolean hasErrors() {
+            return !syntaxErrors.isEmpty();
+        }
+
+        public void clear() {
+            syntaxErrors.clear();
+            if (errorOutput != null) {
+                errorOutput.setText("");
+            }
+        }
+    }
+
+    // Clase para realizar validaciones adicionales al código
+    private class AdvancedCodeValidator {
+        private String code;
+        private VGraphErrorListener errorListener;
+
+        public AdvancedCodeValidator(String code, VGraphErrorListener errorListener) {
+            this.code = code;
+            this.errorListener = errorListener;
+        }
+
+        public boolean validate() {
+            errorListener.clear();
+
+            try {
+                // Validación inicial de estructura básica
+                validateBasicStructure();
+
+                // Análisis léxico y sintáctico estándar
+                CharStream input = CharStreams.fromString(code);
+                VGraphLexer lexer = new VGraphLexer(input);
+                lexer.removeErrorListeners();
+                lexer.addErrorListener(errorListener);
+
+                CommonTokenStream tokens = new CommonTokenStream(lexer);
+                VGraphParser parser = new VGraphParser(tokens);
+                parser.removeErrorListeners();
+                parser.addErrorListener(errorListener);
+
+                // Verificaciones adicionales específicas de la gramática
+                validateSpecificGrammarRules(tokens);
+
+                // Ejecutar el parser
+                try {
+                    parser.program();
+                } catch (Exception e) {
+                    // Si el parser falla, ya se habrán registrado los errores a través del errorListener
+                }
+
+                // Si no se detectaron errores en el parsing, realizar análisis semántico adicional
+                if (!errorListener.hasErrors()) {
+                    validateSemanticRules();
+                }
+
+                return !errorListener.hasErrors();
+            } catch (Exception e) {
+                errorListener.syntaxError(null, null, -1, -1,
+                        "Error interno durante la validación: " + e.getMessage(), null);
+                e.printStackTrace();
+                return false;
+            }
+        }
+
+        // Validación básica de la estructura del código
+        private void validateBasicStructure() {
+            // Verificar balance de llaves
+            int openBraces = countOccurrences(code, '{');
+            int closeBraces = countOccurrences(code, '}');
+            if (openBraces != closeBraces) {
+                errorListener.syntaxError(null, null, 1, 0,
+                        "Error en la estructura: Las llaves no están balanceadas. Hay " +
+                                openBraces + " llaves abiertas y " + closeBraces + " llaves cerradas.", null);
+            }
+
+            // Verificar balance de paréntesis
+            int openParens = countOccurrences(code, '(');
+            int closeParens = countOccurrences(code, ')');
+            if (openParens != closeParens) {
+                errorListener.syntaxError(null, null, 1, 0,
+                        "Error en la estructura: Los paréntesis no están balanceados. Hay " +
+                                openParens + " paréntesis abiertos y " + closeParens + " paréntesis cerrados.", null);
+            }
+
+            // Verificar punto y coma al final de las sentencias
+            validateSemicolons();
+        }
+
+        // Validación específica para reglas de la gramática
+        private void validateSpecificGrammarRules(CommonTokenStream tokens) {
+            // Analizar todos los tokens
+            tokens.fill();
+            List<Token> tokenList = tokens.getTokens();
+
+            // Verificar asignaciones incompletas
+            for (int i = 0; i < tokenList.size() - 1; i++) {
+                Token token = tokenList.get(i);
+
+                // Verificar operadores al final de línea
+                if (isOperatorToken(token.getType())) {
+                    // Verificar si es el último token en la línea
+                    if (i + 1 < tokenList.size()) {
+                        Token nextToken = tokenList.get(i + 1);
+                        if (token.getLine() != nextToken.getLine() ||
+                                nextToken.getType() == VGraphLexer.SEMICOLON) {
+                            errorListener.syntaxError(null, token, token.getLine(), token.getCharPositionInLine(),
+                                    "Operación incompleta: falta un operando después de '" + token.getText() + "'", null);
+                        }
+                    }
+                }
+
+                // Verificar bucles incompletos o malformados
+                if (token.getType() == VGraphLexer.LOOP) {
+                    validateLoopStructure(tokenList, i);
+                }
+
+                // Verificar condicionales incompletos
+                if (token.getType() == VGraphLexer.IF) {
+                    validateIfStructure(tokenList, i);
+                }
+
+                // Verificar declaraciones y asignaciones de variables
+                if (token.getType() == VGraphLexer.ASSIGN) {
+                    validateAssignment(tokenList, i);
+                }
+            }
+        }
+
+        // Validación específica para la estructura de bucles
+        private void validateLoopStructure(List<Token> tokens, int loopIndex) {
+            // Debe tener la estructura: loop ( inicialización; comparación; incremento ) { cuerpo }
+            if (loopIndex + 2 < tokens.size()) {
+                // Verificar '(' después de 'loop'
+                Token afterLoop = tokens.get(loopIndex + 1);
+                if (afterLoop.getType() != VGraphLexer.PAR_OPEN) {
+                    errorListener.syntaxError(null, afterLoop, afterLoop.getLine(), afterLoop.getCharPositionInLine(),
+                            "Se esperaba '(' después de 'loop'", null);
+                    return;
+                }
+
+                // Buscar los tres componentes del bucle separados por punto y coma
+                boolean foundInit = false, foundComparison = false, foundIncrement = false;
+                int openParenCount = 1;
+                int i = loopIndex + 2;
+
+                while (i < tokens.size() && openParenCount > 0) {
+                    Token token = tokens.get(i);
+
+                    if (token.getType() == VGraphLexer.PAR_OPEN) {
+                        openParenCount++;
+                    } else if (token.getType() == VGraphLexer.PAR_CLOSE) {
+                        openParenCount--;
+                        if (openParenCount == 0) {
+                            // Fin de la declaración del bucle
+                            break;
+                        }
+                    } else if (token.getType() == VGraphLexer.SEMICOLON) {
+                        if (!foundInit) {
+                            foundInit = true;
+                        } else if (!foundComparison) {
+                            foundComparison = true;
+                        } else {
+                            // Ya tenemos los tres componentes
+                            foundIncrement = true;
+                        }
+                    }
+
+                    i++;
+                }
+
+                // Verificar si faltan componentes
+                if (!foundInit || !foundComparison) {
+                    Token loopToken = tokens.get(loopIndex);
+                    errorListener.syntaxError(null, loopToken, loopToken.getLine(), loopToken.getCharPositionInLine(),
+                            "Estructura incorrecta del bucle. Debe tener: inicialización; comparación; incremento", null);
+                }
+            }
+        }
+
+        // Validación específica para la estructura de condicionales if
+        private void validateIfStructure(List<Token> tokens, int ifIndex) {
+            // Debe tener la estructura: if ( condición ) { cuerpo }
+            if (ifIndex + 2 < tokens.size()) {
+                // Verificar '(' después de 'if'
+                Token afterIf = tokens.get(ifIndex + 1);
+                if (afterIf.getType() != VGraphLexer.PAR_OPEN) {
+                    errorListener.syntaxError(null, afterIf, afterIf.getLine(), afterIf.getCharPositionInLine(),
+                            "Se esperaba '(' después de 'if'", null);
+                    return;
+                }
+
+                // Buscar el cierre del paréntesis y luego la apertura de llaves
+                boolean foundCloseParen = false;
+                boolean foundOpenBrace = false;
+                int openParenCount = 1;
+                int i = ifIndex + 2;
+
+                while (i < tokens.size() && !foundOpenBrace) {
+                    Token token = tokens.get(i);
+
+                    if (token.getType() == VGraphLexer.PAR_OPEN) {
+                        openParenCount++;
+                    } else if (token.getType() == VGraphLexer.PAR_CLOSE) {
+                        openParenCount--;
+                        if (openParenCount == 0) {
+                            foundCloseParen = true;
+                        }
+                    } else if (token.getType() == VGraphLexer.BRACKET_OPEN && foundCloseParen) {
+                        foundOpenBrace = true;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                // Verificar si falta algún componente
+                if (!foundCloseParen || !foundOpenBrace) {
+                    Token ifToken = tokens.get(ifIndex);
+                    errorListener.syntaxError(null, ifToken, ifToken.getLine(), ifToken.getCharPositionInLine(),
+                            "Estructura incorrecta del condicional. Debe tener: if (condición) {cuerpo}", null);
+                }
+            }
+        }
+
+        // Validación específica para asignaciones
+        private void validateAssignment(List<Token> tokens, int assignIndex) {
+            if (assignIndex > 0 && assignIndex + 1 < tokens.size()) {
+                Token prevToken = tokens.get(assignIndex - 1);
+                Token nextToken = tokens.get(assignIndex + 1);
+
+                // Verificar si hay un identificador antes del =
+                if (prevToken.getType() != VGraphLexer.ID) {
+                    errorListener.syntaxError(null, prevToken, prevToken.getLine(), prevToken.getCharPositionInLine(),
+                            "Se esperaba un identificador antes de '='", null);
+                }
+
+                // Verificar si falta la expresión después del =
+                if (nextToken.getType() == VGraphLexer.SEMICOLON ||
+                        isOperatorToken(nextToken.getType())) {
+                    errorListener.syntaxError(null, nextToken, nextToken.getLine(), nextToken.getCharPositionInLine(),
+                            "Asignación incompleta: falta la expresión después de '='", null);
+                }
+            }
+        }
+
+        // Validación de reglas semánticas
+        private void validateSemanticRules() {
+            // Este método podría implementarse para verificar reglas semánticas adicionales
+            // como tipos de variables, uso de variables no declaradas, etc.
+        }
+
+        // Verificar la presencia correcta de punto y coma en las sentencias
+        private void validateSemicolons() {
+            String[] lines = code.split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i].trim();
+
+                // Ignorar líneas vacías, comentarios y llaves
+                if (line.isEmpty() || line.startsWith("#") ||
+                        line.equals("{") || line.equals("}") ||
+                        // Ignorar líneas que terminan con apertura de bloque
+                        line.endsWith("{")) {
+                    continue;
+                }
+
+                // Verificar si la línea termina con punto y coma, excepto para estructuras de control
+                if (!line.endsWith(";") &&
+                        !line.startsWith("if") && !line.startsWith("else") &&
+                        !line.startsWith("loop") && !line.startsWith("function")) {
+
+                    // Verificar si es una línea que debe terminar con punto y coma
+                    if (line.contains("=") || line.contains("println") ||
+                            line.contains("wait") || line.startsWith("(int)") ||
+                            line.startsWith("(color)")) {
+                        errorListener.syntaxError(null, null, i + 1, line.length(),
+                                "Falta punto y coma al final de la sentencia", null);
+                    }
+                }
+
+                // Verificar asignaciones incompletas (líneas con '=' pero sin nada después)
+                if (line.contains("=")) {
+                    int equalsPos = line.indexOf('=');
+                    if (equalsPos == line.length() - 1 ||
+                            (equalsPos < line.length() - 1 && line.substring(equalsPos + 1).trim().isEmpty())) {
+                        errorListener.syntaxError(null, null, i + 1, equalsPos,
+                                "Asignación incompleta: falta la expresión después de '='", null);
+                    }
+                }
+
+                // Verificar operaciones incompletas (operador al final de la línea)
+                for (char op : new char[]{'+', '-', '*', '/', '%'}) {
+                    if (line.endsWith(String.valueOf(op))) {
+                        errorListener.syntaxError(null, null, i + 1, line.length() - 1,
+                                "Operación incompleta: falta el operando después de '" + op + "'", null);
+                    }
+                }
+            }
+        }
+
+        // Verificar si un tipo de token es un operador
+        private boolean isOperatorToken(int tokenType) {
+            return tokenType == VGraphLexer.PLUS ||
+                    tokenType == VGraphLexer.MINUS ||
+                    tokenType == VGraphLexer.MULT ||
+                    tokenType == VGraphLexer.DIV ||
+                    tokenType == VGraphLexer.MODULUS;
+        }
+
+        // Contar ocurrencias de un carácter en una cadena
+        private int countOccurrences(String str, char c) {
+            int count = 0;
+            for (int i = 0; i < str.length(); i++) {
+                if (str.charAt(i) == c) {
+                    count++;
+                }
+            }
+            return count;
+        }
+    }
 
     public MainIDE() {
-        setTitle(WINDOW_TITLE);
-        setSize(800, 600);
+        // Set up the main window
+        setTitle("VGraph IDE");
+        setSize(1000, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
+        // Initialize components
         initComponents();
-        layoutComponents();
 
+        // Make the window visible
         setVisible(true);
     }
 
     private void initComponents() {
-        // Área de código con números de línea
-        codeTextArea = new JTextArea();
-        codeTextArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
-        codeTextArea.setTabSize(2);
-        TextLineNumber tln = new TextLineNumber(codeTextArea);
+        // Set up layout
+        setLayout(new BorderLayout());
 
-        codeScrollPane = new JScrollPane(codeTextArea);
-        codeScrollPane.setRowHeaderView(tln);
+        // Create code editing area with line numbers
+        codeArea = new JTextArea();
+        codeArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        lineNumbers = new JTextArea("1");
+        lineNumbers.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        lineNumbers.setBackground(new Color(240, 240, 240));
+        lineNumbers.setEditable(false);
+        lineNumbers.setFocusable(false);
+        lineNumbers.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
 
-        // Área de consola
-        consoleTextArea = new JTextArea();
-        consoleTextArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
-        consoleTextArea.setEditable(false);
-    }
+        // Highlight current line
+        codeArea.setCaretPosition(0);
 
-    private void layoutComponents() {
-        JPanel mainPanel = new JPanel(new BorderLayout());
-        mainPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
+        // Create document listener to update line numbers
+        codeArea.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updateLineNumbers();
+            }
 
-        // Panel de botones
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updateLineNumbers();
+            }
 
-        JButton loadButton = new JButton("Cargar");
-        loadButton.addActionListener(e -> openFile());
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updateLineNumbers();
+            }
+        });
 
-        JButton saveButton = new JButton("Guardar");
+        // Create error area
+        errorArea = new JTextArea();
+        errorArea.setEditable(false);
+        errorArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        errorArea.setForeground(Color.RED);
+        JScrollPane errorPane = new JScrollPane(errorArea);
+        errorPane.setPreferredSize(new Dimension(getWidth(), 150));
+
+        // Set up the code scroll pane with line numbers
+        JScrollPane codeScrollPane = new JScrollPane(codeArea);
+        codeScrollPane.setRowHeaderView(lineNumbers);
+
+        // Create the toolbar with buttons
+        JToolBar toolbar = new JToolBar();
+        toolbar.setFloatable(false);
+
+        loadButton = new JButton("Cargar");
+        saveButton = new JButton("Guardar");
+        compileButton = new JButton("Compilar");
+        runButton = new JButton("Ejecutar");
+
+        toolbar.add(loadButton);
+        toolbar.add(saveButton);
+        toolbar.add(new JToolBar.Separator());
+        toolbar.add(compileButton);
+        toolbar.add(runButton);
+
+        // Initialize file chooser
+        fileChooser = new JFileChooser();
+        fileChooser.setFileFilter(new FileNameExtensionFilter("VGraph Files (." + EXTENSION + ")", EXTENSION));
+
+        // Add components to the frame
+        add(toolbar, BorderLayout.NORTH);
+        add(codeScrollPane, BorderLayout.CENTER);
+        add(errorPane, BorderLayout.SOUTH);
+
+        // Add button action listeners
+        loadButton.addActionListener(e -> loadFile());
         saveButton.addActionListener(e -> saveFile());
-
-        JButton compileButton = new JButton("Compilar");
-        compileButton.addActionListener(e -> compile());
-
-        JButton runButton = new JButton("Ejecutar");
-        runButton.addActionListener(e -> run());
-
-        buttonPanel.add(loadButton);
-        buttonPanel.add(saveButton);
-        buttonPanel.add(compileButton);
-        buttonPanel.add(runButton);
-
-        // Panel de código
-        JPanel codePanel = new JPanel(new BorderLayout());
-        codePanel.add(codeScrollPane, BorderLayout.CENTER);
-
-        // Panel de consola
-        JScrollPane consoleScrollPane = new JScrollPane(consoleTextArea);
-        consoleScrollPane.setPreferredSize(new Dimension(800, 150));
-        consoleScrollPane.setBorder(BorderFactory.createTitledBorder("Consola"));
-
-        // Organización del panel principal
-        mainPanel.add(buttonPanel, BorderLayout.NORTH);
-        mainPanel.add(codePanel, BorderLayout.CENTER);
-        mainPanel.add(consoleScrollPane, BorderLayout.SOUTH);
-
-        add(mainPanel);
+        compileButton.addActionListener(e -> compileCode());
+        runButton.addActionListener(e -> runCode());
     }
 
-    private void openFile() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Abrir archivo");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("Archivos VGraph", "vgraph"));
+    private void updateLineNumbers() {
+        try {
+            int caretPosition = codeArea.getDocument().getLength();
+            Rectangle r = codeArea.modelToView(caretPosition);
+            int lineHeight = r.height;
+            int lineCount = codeArea.getDocument().getDefaultRootElement().getElementCount();
 
-        int result = fileChooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            File selectedFile = fileChooser.getSelectedFile();
-            try (BufferedReader reader = new BufferedReader(new FileReader(selectedFile))) {
+            StringBuilder numbers = new StringBuilder();
+            for (int i = 1; i <= lineCount; i++) {
+                numbers.append(i).append("\n");
+            }
+
+            if (!lineNumbers.getText().equals(numbers.toString())) {
+                lineNumbers.setText(numbers.toString());
+            }
+        } catch (BadLocationException e) {
+            // Ignore exception
+        }
+    }
+
+    private void loadFile() {
+        int returnVal = fileChooser.showOpenDialog(this);
+
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+            try {
+                currentFile = fileChooser.getSelectedFile();
+                BufferedReader reader = new BufferedReader(new FileReader(currentFile));
                 StringBuilder content = new StringBuilder();
                 String line;
+
                 while ((line = reader.readLine()) != null) {
                     content.append(line).append("\n");
                 }
 
-                codeTextArea.setText(content.toString());
-                currentFilePath = selectedFile.getAbsolutePath();
-                isFileSaved = true;
-                isCompiled = false;
-                setTitle(WINDOW_TITLE + " - " + selectedFile.getName());
-
-                appendToConsole("Archivo cargado: " + selectedFile.getName() + "\n", Color.BLACK);
-
+                reader.close();
+                codeArea.setText(content.toString());
+                updateLineNumbers();
+                errorArea.setText("");
+                setTitle("VGraph IDE - " + currentFile.getName());
             } catch (IOException e) {
-                JOptionPane.showMessageDialog(this,
-                        "Error al abrir el archivo: " + e.getMessage(),
+                JOptionPane.showMessageDialog(this, "Error al cargar el archivo: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
 
     private void saveFile() {
-        if (currentFilePath == null) {
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setDialogTitle("Guardar archivo");
-            fileChooser.setFileFilter(new FileNameExtensionFilter("Archivos VGraph", "vgraph"));
+        if (currentFile == null) {
+            int returnVal = fileChooser.showSaveDialog(this);
 
-            int result = fileChooser.showSaveDialog(this);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                File selectedFile = fileChooser.getSelectedFile();
-                String filePath = selectedFile.getAbsolutePath();
-
-                if (!filePath.toLowerCase().endsWith(DEFAULT_EXTENSION)) {
-                    filePath += DEFAULT_EXTENSION;
+            if (returnVal == JFileChooser.APPROVE_OPTION) {
+                currentFile = fileChooser.getSelectedFile();
+                if (!currentFile.getName().endsWith("." + EXTENSION)) {
+                    currentFile = new File(currentFile.getAbsolutePath() + "." + EXTENSION);
                 }
-
-                currentFilePath = filePath;
+                setTitle("VGraph IDE - " + currentFile.getName());
             } else {
                 return;
             }
         }
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(currentFilePath))) {
-            writer.write(codeTextArea.getText());
-            isFileSaved = true;
-            isCompiled = false;
-
-            File file = new File(currentFilePath);
-            setTitle(WINDOW_TITLE + " - " + file.getName());
-
-            appendToConsole("Archivo guardado: " + file.getName() + "\n", Color.BLACK);
-
+        try {
+            FileWriter writer = new FileWriter(currentFile);
+            writer.write(codeArea.getText());
+            writer.close();
+            JOptionPane.showMessageDialog(this, "Archivo guardado correctamente.",
+                    "Guardar", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this,
-                    "Error al guardar el archivo: " + e.getMessage(),
+            JOptionPane.showMessageDialog(this, "Error al guardar el archivo: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private class ErrorListener extends BaseErrorListener {
-        private boolean hasErrors = false;
+    private void compileCode() {
+        errorArea.setText("");
 
-        @Override
-        public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol,
-                                int line, int charPositionInLine, String msg, RecognitionException e) {
-            hasErrors = true;
-            String errorMsg = "Error en línea " + line + ":" + charPositionInLine + " - " + msg;
-            appendToConsole(errorMsg + "\n", CONSOLE_ERROR_COLOR);
-
-            // Destacar la línea con error
-            highlightErrorLine(line);
-        }
-
-        public boolean hasErrors() {
-            return hasErrors;
-        }
-    }
-
-    private void highlightErrorLine(int lineNumber) {
-        try {
-            // Obtener el inicio y fin de la línea
-            int start = getLineStartOffset(lineNumber);
-            int end = getLineEndOffset(lineNumber);
-
-            // Crear un rectángulo de resaltado rojo claro
-            if (start >= 0 && end > start) {
-                codeTextArea.getHighlighter().addHighlight(
-                        start, end,
-                        new DefaultHighlighter.DefaultHighlightPainter(new Color(255, 200, 200))
-                );
-            }
-        } catch (BadLocationException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private int getLineStartOffset(int lineNumber) {
-        try {
-            return codeTextArea.getLineStartOffset(lineNumber - 1);
-        } catch (BadLocationException e) {
-            return -1;
-        }
-    }
-
-    private int getLineEndOffset(int lineNumber) {
-        try {
-            return codeTextArea.getLineEndOffset(lineNumber - 1);
-        } catch (BadLocationException e) {
-            return -1;
-        }
-    }
-
-    private void compile() {
-        consoleTextArea.setText("");
-        codeTextArea.getHighlighter().removeAllHighlights();
-
-        String code = codeTextArea.getText();
-        if (code.isEmpty()) {
-            appendToConsole("Error: No hay código para compilar\n", CONSOLE_ERROR_COLOR);
+        if (codeArea.getText().trim().isEmpty()) {
+            errorArea.setText("No hay código para compilar.");
             return;
         }
 
-        if (!isFileSaved) {
-            int option = JOptionPane.showConfirmDialog(this,
-                    "Debe guardar el archivo antes de compilar. ¿Desea guardarlo ahora?",
-                    "Guardar archivo", JOptionPane.YES_NO_OPTION);
+        // Crear validador con el código actual
+        VGraphErrorListener errorListener = new VGraphErrorListener(errorArea, codeArea.getText());
+        AdvancedCodeValidator validator = new AdvancedCodeValidator(codeArea.getText(), errorListener);
 
-            if (option == JOptionPane.YES_OPTION) {
-                saveFile();
-            } else {
-                return;
-            }
+        // Limpiar cualquier resaltado anterior
+        Highlighter highlighter = codeArea.getHighlighter();
+        highlighter.removeAllHighlights();
+
+        // Validar el código
+        boolean isValid = validator.validate();
+
+        if (isValid) {
+            errorArea.setForeground(new Color(0, 150, 0)); // Verde oscuro
+            errorArea.setText("Compilación exitosa. No se encontraron errores.\nAnálisis semántico completado.");
+        } else {
+            errorArea.setForeground(Color.RED);
+            // Resaltar las líneas con errores
+            highlightErrorLines(errorListener.getSyntaxErrors());
         }
+    }
 
-        appendToConsole("Compilando...\n", Color.BLACK);
+    private void highlightErrorLines(List<String> errors) {
+        Highlighter highlighter = codeArea.getHighlighter();
+        highlighter.removeAllHighlights();
 
         try {
-            CharStream input = CharStreams.fromString(code);
+            Highlighter.HighlightPainter errorPainter = new DefaultHighlighter.DefaultHighlightPainter(new Color(255, 200, 200));
 
-            appendToConsole("Iniciando análisis léxico...\n", Color.BLACK);
-            VGraphLexer lexer = new VGraphLexer(input);
+            // Extraer números de línea de los mensajes de error
+            for (String error : errors) {
+                // Buscar patrón "Error en línea X:Y"
+                Pattern pattern = Pattern.compile("Error en línea (\\d+):");
+                Matcher matcher = pattern.matcher(error);
+                if (matcher.find()) {
+                    try {
+                        int lineNum = Integer.parseInt(matcher.group(1));
 
-            ErrorListener lexerErrorListener = new ErrorListener();
-            lexer.removeErrorListeners();
-            lexer.addErrorListener(lexerErrorListener);
+                        // Obtener la posición de inicio y fin de la línea
+                        if (lineNum > 0 && lineNum <= codeArea.getLineCount()) {
+                            int startOffset = codeArea.getLineStartOffset(lineNum - 1);
+                            int endOffset = codeArea.getLineEndOffset(lineNum - 1);
 
+                            // Resaltar la línea
+                            highlighter.addHighlight(startOffset, endOffset, errorPainter);
+                        }
+                    } catch (NumberFormatException e) {
+                        // Ignorar si no se puede parsear el número de línea
+                    }
+                }
+            }
+        } catch (BadLocationException e) {
+            // Ignorar excepciones de ubicación
+        }
+    }
+
+    private void runCode() {
+        // Primero compilar para verificar errores
+        errorArea.setText("");
+
+        if (codeArea.getText().trim().isEmpty()) {
+            errorArea.setText("No hay código para ejecutar.");
+            return;
+        }
+
+        // Validar el código
+        VGraphErrorListener errorListener = new VGraphErrorListener(errorArea, codeArea.getText());
+        AdvancedCodeValidator validator = new AdvancedCodeValidator(codeArea.getText(), errorListener);
+        boolean isValid = validator.validate();
+
+        if (!isValid) {
+            errorArea.setForeground(Color.RED);
+            errorArea.append("\nNo se puede ejecutar el código con errores.");
+            highlightErrorLines(errorListener.getSyntaxErrors());
+            return;
+        }
+
+        try {
+            // Preparar el analizador léxico
+            CharStream in = CharStreams.fromString(codeArea.getText());
+            VGraphLexer lexer = new VGraphLexer(in);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
-            appendToConsole("Análisis léxico completado.\n", Color.BLACK);
 
-            appendToConsole("Iniciando análisis sintáctico...\n", Color.BLACK);
+            // Preparar el parser
             VGraphParser parser = new VGraphParser(tokens);
 
-            ErrorListener parserErrorListener = new ErrorListener();
-            parser.removeErrorListeners();
-            parser.addErrorListener(parserErrorListener);
-
+            // Ejecutar el parser
             VGraphParser.ProgramContext tree = parser.program();
 
-            if (lexerErrorListener.hasErrors() || parserErrorListener.hasErrors()) {
-                appendToConsole("Análisis sintáctico completado con errores.\n", CONSOLE_ERROR_COLOR);
-                isCompiled = false;
-                return;
-            }
+            // Ejecutar el código a través del visitor
+            VGraphCustomVisitor visitor = new VGraphCustomVisitor();
+            visitor.visit(tree);
 
-            appendToConsole("Análisis sintáctico completado con éxito.\n", CONSOLE_SUCCESS_COLOR);
-
-            appendToConsole("Iniciando análisis semántico...\n", Color.BLACK);
-            visitor = new VGraphCustomVisitor();
-            try {
-                visitor.visit(tree);
-                appendToConsole("Análisis semántico completado con éxito.\n", CONSOLE_SUCCESS_COLOR);
-                appendToConsole("Compilación finalizada correctamente.\n", CONSOLE_SUCCESS_COLOR);
-                isCompiled = true;
-            } catch (Exception e) {
-                appendToConsole("Error en análisis semántico: " + e.getMessage() + "\n", CONSOLE_ERROR_COLOR);
-                appendToConsole("Compilación finalizada con errores.\n", CONSOLE_ERROR_COLOR);
-                isCompiled = false;
-            }
-
+            errorArea.setForeground(new Color(0, 150, 0)); // Verde oscuro
+            errorArea.setText("Ejecución iniciada. El código está siendo enviado al dispositivo externo VGA.\n");
+            errorArea.append("La visualización se mostrará en el dispositivo externo conectado.");
         } catch (Exception e) {
-            appendToConsole("Error de compilación: " + e.getMessage() + "\n", CONSOLE_ERROR_COLOR);
-            isCompiled = false;
-        }
-    }
-
-    private void run() {
-        if (!isCompiled) {
-            appendToConsole("Debe compilar el programa antes de ejecutarlo.\n", CONSOLE_WARNING_COLOR);
-            int option = JOptionPane.showConfirmDialog(this,
-                    "El programa no está compilado. ¿Desea compilarlo ahora?",
-                    "Compilar programa", JOptionPane.YES_NO_OPTION);
-
-            if (option == JOptionPane.YES_OPTION) {
-                compile();
-                if (!isCompiled) {
-                    return;
-                }
-            } else {
-                return;
+            errorArea.setForeground(Color.RED);
+            errorArea.setText("Error en la ejecución: " + e.getMessage());
+            if (e.getCause() != null) {
+                errorArea.append("\nCausa: " + e.getCause().getMessage());
             }
-        }
-
-        appendToConsole("\nEjecutando el programa...\n", Color.BLACK);
-
-        try {
-            if (visitor != null) {
-                appendToConsole("Generando visualización gráfica...\n", Color.BLACK);
-                // Aquí iría la lógica de ejecución del código usando el visitor
-                // y generando la visualización gráfica
-                appendToConsole("La visualización ha sido generada correctamente.\n", CONSOLE_SUCCESS_COLOR);
-            } else {
-                appendToConsole("Error: No hay resultados de compilación disponibles.\n", CONSOLE_ERROR_COLOR);
-            }
-        } catch (Exception e) {
-            appendToConsole("Error durante la ejecución: " + e.getMessage() + "\n", CONSOLE_ERROR_COLOR);
-        }
-    }
-
-    private void appendToConsole(String text, Color color) {
-        SimpleAttributeSet attributes = new SimpleAttributeSet();
-        StyleConstants.setForeground(attributes, color);
-
-        try {
-            int len = consoleTextArea.getDocument().getLength();
-            consoleTextArea.getDocument().insertString(len, text, attributes);
-            consoleTextArea.setCaretPosition(consoleTextArea.getDocument().getLength());
-        } catch (BadLocationException e) {
             e.printStackTrace();
         }
     }
 
-    // Clase para mostrar los números de línea
-    class TextLineNumber extends JPanel {
-        private final JTextComponent textComponent;
-        private final int MARGIN = 5;
-        private final Font LINE_FONT = new Font("Monospaced", Font.PLAIN, 12);
-
-        public TextLineNumber(JTextComponent textComponent) {
-            this.textComponent = textComponent;
-            setPreferredSize(new Dimension(30, 1));
-            setBackground(new Color(240, 240, 240));
-            setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Color.GRAY));
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            g.setFont(LINE_FONT);
-            g.setColor(Color.GRAY);
-
-            try {
-                // Determinar las líneas visibles
-                Rectangle clip = g.getClipBounds();
-                int startOffset = textComponent.viewToModel2D(new Point(0, clip.y));
-                int endOffset = textComponent.viewToModel2D(new Point(0, clip.y + clip.height));
-
-                // Obtener información de las líneas
-                Document doc = textComponent.getDocument();
-                int startLine = doc.getDefaultRootElement().getElementIndex(startOffset);
-                int endLine = doc.getDefaultRootElement().getElementIndex(endOffset);
-
-                // Dibujar los números de línea
-                for (int i = startLine; i <= endLine; i++) {
-                    String lineNumber = String.valueOf(i + 1);
-
-                    // Calcular la posición Y para el número de línea
-                    Element line = doc.getDefaultRootElement().getElement(i);
-                    if (line == null) continue;
-
-                    try {
-                        Rectangle r = textComponent.modelToView(line.getStartOffset());
-                        int y = r.y + r.height - 3;
-                        g.drawString(lineNumber, getWidth() - g.getFontMetrics().stringWidth(lineNumber) - MARGIN, y);
-                    } catch (BadLocationException e) {
-                        continue;
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
+    // Método principal para lanzar el IDE
     public static void main(String[] args) {
-        // Asegurar que la interfaz de usuario se ejecute en el hilo de EDT
-        SwingUtilities.invokeLater(() -> {
-            try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            new MainIDE();
-        });
+        try {
+            // Establecer el look and feel nativo del sistema
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        SwingUtilities.invokeLater(() -> new MainIDE());
     }
 }
-
