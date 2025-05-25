@@ -2,7 +2,7 @@
 
 loop (i = 0; i <= 10; i = i + 1) {
     println(i);
-    wait(5);
+    wait(3);
     i = i + 5;
     println(3);
 
