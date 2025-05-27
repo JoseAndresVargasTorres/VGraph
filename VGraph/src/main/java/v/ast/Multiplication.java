@@ -14,7 +14,34 @@ public class Multiplication implements ASTNode{
 
     @Override
     public Object execute(Map<String, Object> symbolTable){
-        return (int)operand1.execute(symbolTable) * (int)operand2.execute(symbolTable);
-    };
+        Object left = operand1.execute(symbolTable);
+        Object right = operand2.execute(symbolTable);
+
+        // Convertir left a entero
+        int leftValue;
+        if (left instanceof Integer) {
+            leftValue = (Integer) left;
+        } else if (left instanceof Double) {
+            leftValue = ((Double) left).intValue();
+        } else if (left instanceof String) {
+            leftValue = Integer.parseInt((String) left);
+        } else {
+            leftValue = 0; // valor por defecto
+        }
+
+        // Convertir right a entero
+        int rightValue;
+        if (right instanceof Integer) {
+            rightValue = (Integer) right;
+        } else if (right instanceof Double) {
+            rightValue = ((Double) right).intValue();
+        } else if (right instanceof String) {
+            rightValue = Integer.parseInt((String) right);
+        } else {
+            rightValue = 0; // valor por defecto
+        }
+
+        return leftValue * rightValue;
+    }
 }
 

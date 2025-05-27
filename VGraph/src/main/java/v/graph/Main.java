@@ -16,15 +16,18 @@ public class Main {
         for (String file : files){
             System.out.println("START: " + file);
 
-            CharStream in = CharStreams.fromFileName("C:\\Users\\Gaby\\Documents\\VII semestre\\Compi\\Proyecto\\VGraph\\VGraph\\src\\test\\resources\\test.vgraph");
+            CharStream in = CharStreams.fromFileName("C:\\Users\\josev\\OneDrive\\Documentos\\Semestre II 2025\\Compiladores e Intérpretes\\Proyecto\\VGraph\\VGraph\\src\\test\\resources\\test.vgraph");
             VGraphLexer lexer = new VGraphLexer(in);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             VGraphParser parser = new VGraphParser(tokens);
             VGraphParser.ProgramContext tree = parser.program();
-            VGraphCustomVisitor visitor = new VGraphCustomVisitor();
-            visitor.visit(tree);
 
-            System.out.println("FINISH: " + file);
+
+
+            VGraphCustomVisitor visitor = new VGraphCustomVisitor();
+            String output   = visitor.visit(tree);
+
+            System.out.println(output);
         }
     }
 }

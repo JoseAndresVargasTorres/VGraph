@@ -35,6 +35,8 @@ sentence returns [ASTNode node]:
     | println {$node = $println.node;}
     | loop_command {$node = $loop_command.node;}
     | wait_command {$node = $wait_command.node;}
+    | frame {$node = $frame.node;}
+
 ;
 
 //Prints
@@ -57,11 +59,11 @@ loop_command returns [ASTNode node]
 : LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
     PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
 
-body returns [List<ASTNode> list]
-@init {
+body returns [List<ASTNode> list]:
+{
     $list = new ArrayList<ASTNode>();
 }
-: (s=sentence { $list.add($s.node); })*;
+ (s=sentence { $list.add($s.node); })*;
 
 increment_loop returns [ASTNode node]:
     ID ASSIGN expression
@@ -69,12 +71,12 @@ increment_loop returns [ASTNode node]:
 ;
 
 comparison returns [ASTNode node]:
-     e1=expression GT e2=expression {$node = new GreaterThan($e1.node,$e2.node);}
-    | e1=expression LT e2=expression {$node = new LessThan($e1.node,$e2.node);}
-    | e1=expression GEQ e2=expression {$node = new GreaterOrEqual($e1.node,$e2.node);}
-    | e1=expression LEQ e2=expression {$node = new LessOrEqual($e1.node,$e2.node);}
-    | e1=expression EQ e2=expression {$node = new Equal($e1.node,$e2.node);}
-    | e1=expression NEQ e2=expression {$node = new NotEqual($e1.node,$e2.node);}
+     e1=operand GT e2=operand {$node = new GreaterThan($e1.node,$e2.node);}
+    | e1=operand LT e2=operand {$node = new LessThan($e1.node,$e2.node);}
+    | e1=operand GEQ e2=operand {$node = new GreaterOrEqual($e1.node,$e2.node);}
+    | e1=operand LEQ e2=operand {$node = new LessOrEqual($e1.node,$e2.node);}
+    | e1=operand EQ e2=operand {$node = new Equal($e1.node,$e2.node);}
+    | e1=operand NEQ e2=operand {$node = new NotEqual($e1.node,$e2.node);}
     ;
 //**************************************************************************************************************************************
 //Ifs
@@ -85,7 +87,7 @@ conditional returns [ASTNode node]:
     }
     BRACKET_OPEN (s1=sentence {body.add($s1.node);})* BRACKET_CLOSE
 
-    ELSEIF
+    ELSEIF PAR_OPEN expression PAR_CLOSE
     {
         List<ASTNode> elseifbody = new ArrayList<ASTNode>();
     }
@@ -103,21 +105,21 @@ conditional returns [ASTNode node]:
 
 //declaracion de frame
 frame returns [ASTNode node]:
-     FRAME PAR_OPEN se=sentence PAR_CLOSE
+     FRAME BRACKET_OPEN se=sentence BRACKET_CLOSE
           {
             $node = new Frame($se.node);
           };
 
 //Declaracion de setcolor
 setcolor returns [ASTNode node]:
-     SETCOLOR PAR_OPEN t=expression PAR_CLOSE
+     SETCOLOR PAR_OPEN t=expression PAR_CLOSE SEMICOLON
           {
             $node = new Setcolor($t.node);
           };
 
 //Declaracion de draw
 draw returns [ASTNode node]:
-    DRAW PAR_OPEN s=shapeCall PAR_CLOSE
+    DRAW s=shapeCall SEMICOLON
     {
          $node = new shapeCall($s.node);
     };
@@ -211,6 +213,7 @@ var_assign returns [ASTNode node]:
 //Operaciones
 expression returns [ASTNode node]:
     operand {$node = $operand.node;}
+    | comparison {$node = $comparison.node;}
 ;
 
 operand returns [ASTNode node]:
