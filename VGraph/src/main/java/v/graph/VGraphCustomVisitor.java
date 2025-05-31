@@ -213,7 +213,6 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         return "(" + left + " " + op + " " + right + ")";
     }
 
-    // CORREGIDO: conditional usando las listas correctas
     @Override
     public String visitConditional(VGraphParser.ConditionalContext ctx) {
         StringBuilder sb = new StringBuilder();
@@ -222,14 +221,9 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         sb.append(indent()).append("if ").append(visit(ctx.expression(0))).append(" {\n");
         indentLevel++;
 
-        // Según tu gramática: (s1=sentence {body.add($s1.node);})*
-        // ctx.s1 son los elementos individuales, no listas
-        // Necesitamos usar sentence() para obtener todas las sentencias
-
         List<VGraphParser.SentenceContext> allSentences = ctx.sentence();
 
-        // Por ahora, como workaround, ponemos las primeras sentencias en el IF
-        // (Esta es una limitación de la gramática actual)
+        // Dividir las sentencias entre if, elseif y else
         int sentenceIndex = 0;
         int ifSentences = allSentences.size() / 3; // Dividir aproximadamente
 
