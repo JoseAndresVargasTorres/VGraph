@@ -16,7 +16,9 @@ public class Main {
         for (String file : files){
             System.out.println("START: " + file);
 
-            CharStream in = CharStreams.fromFileName("C:\\Users\\josev\\OneDrive\\Documentos\\Semestre II 2025\\Compiladores e Intérpretes\\Proyecto\\VGraph\\VGraph\\src\\test\\resources\\test.vgraph");
+            String projectRoot = System.getProperty("user.dir");
+            String fullPath = projectRoot + "/VGraph/" + DIRBASE + file;
+            CharStream in = CharStreams.fromFileName(fullPath);
             VGraphLexer lexer = new VGraphLexer(in);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             VGraphParser parser = new VGraphParser(tokens);

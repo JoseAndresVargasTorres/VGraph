@@ -1,17 +1,25 @@
 # Definir variables para la espiral
-(int) x, y, t;
-(color) c;
-frame {
-    loop (t = 0; t < 360; t = t + 5) {
-        # Calcular coordenadas de la espiral usando trigonometría
-        x = 320 + t * cos(t * 3 / 180); # Centro en X=320
-        y = 240 + t * sin(t * 3 / 180); # Centro en Y=240
-        # Cambiar color en cada iteración
-        if (t % 3 == 0) { c = rojo; }
-        elseif (t % 3 == 1) { c = azul; }
-        else { c = verde; c = blanco; }
-        setcolor(c);
-        draw pixel(x, y);
-        wait(1); # Pequeño retraso para animación suave
+# (int) x, y, t;
+# (color) c;
+# frame {
+#     loop (t = 0; t < 360; t = t + 5) {
+#         # Calcular coordenadas de la espiral usando trigonometría
+#         x = 320 + t * cos(t * 3 / 180); # Centro en X=320
+#         y = 240 + t * sin(t * 3 / 180); # Centro en Y=240
+#         # Cambiar color en cada iteración
+#         if (t % 3 == 0) { c = rojo; }
+#         elseif (t % 3 == 1) { c = azul; }
+#         else { c = verde; c = blanco; }
+#         setcolor(c);
+#         draw pixel(x, y);
+#         wait(1); # Pequeño retraso para animación suave
+#     }
+# }
+
+(int) x;
+x = -1.5;
+frame{
+    if(x < 5){
+       x = 1;
     }
 }

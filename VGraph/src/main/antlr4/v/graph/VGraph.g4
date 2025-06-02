@@ -81,31 +81,42 @@ comparison returns [ASTNode node]:
 //**************************************************************************************************************************************
 //Ifs
 conditional returns [ASTNode node]:
-    IF PAR_OPEN expression PAR_CLOSE
+    IF PAR_OPEN cond=expression PAR_CLOSE
     {
-        List<ASTNode> body = new ArrayList<ASTNode>();
+        List<ASTNode> ifBody = new ArrayList<>();
     }
-    BRACKET_OPEN (s1=sentence {body.add($s1.node);})* BRACKET_CLOSE
+    BRACKET_OPEN (s=sentence {ifBody.add($s.node);})* BRACKET_CLOSE
 
-    ELSEIF PAR_OPEN expression PAR_CLOSE
     {
-        List<ASTNode> elseifbody = new ArrayList<ASTNode>();
+        List<ConditionalBlock> elseifBlocks = new ArrayList<>();
+        List<ASTNode> elseBody = null;
     }
-    BRACKET_OPEN (s2=sentence {elseifbody.add($s2.node);})* BRACKET_CLOSE
 
-    ELSE
+    (   ELSEIF PAR_OPEN elseifCond=expression PAR_CLOSE
+        {
+            List<ASTNode> elseifBody = new ArrayList<>();
+        }
+        BRACKET_OPEN (s1=sentence {elseifBody.add($s1.node);})* BRACKET_CLOSE
+        {
+            elseifBlocks.add(new ConditionalBlock($elseifCond.node, elseifBody));
+        }
+    )*
+
+    (   ELSE
+        {
+            elseBody = new ArrayList<>();
+        }
+        BRACKET_OPEN (s2=sentence {elseBody.add($s2.node);})* BRACKET_CLOSE
+    )?
     {
-        List<ASTNode> elseBody = new ArrayList<ASTNode>();
-    }
-    BRACKET_OPEN (s3=sentence {elseBody.add($s3.node);})* BRACKET_CLOSE
-    {
-        $node = new If($expression.node,body,elseifbody,elseBody);
+        $node = new If($cond.node, ifBody, elseifBlocks, elseBody);
     }
 ;
 
+
 //declaracion de frame
 frame returns [ASTNode node]:
-     FRAME BRACKET_OPEN se=sentence BRACKET_CLOSE
+     FRAME BRACKET_OPEN (se=sentence)* BRACKET_CLOSE
           {
             $node = new Frame($se.node);
           };
@@ -245,7 +256,10 @@ cos returns [ASTNode node]:
 
 //Terminos Basicos
 term returns [ASTNode node]:
-    NUMBER {$node = new Constant(Integer.parseInt($NUMBER.text));}
+    NUMBER {
+        if($NUMBER.text.contains(".")){$node = new Constant(Double.parseDouble($NUMBER.text));}
+        else {$node = new Constant(Integer.parseInt($NUMBER.text));}
+    }
     | COLOR_VALUES {$node = new Constant(new vColor($COLOR_VALUES.text));}
     | BOOLEAN {$node = new Constant(Boolean.parseBoolean($BOOLEAN.text));}
     | ID {$node = new VarRef($ID.text);}
@@ -316,7 +330,7 @@ HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 //Identificadores
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
-NUMBER: [0-9]+;
+NUMBER: '-'? [0-9]+ ('.' [0-9]+)?;
 
 WS: [ \t\n\r]+ -> skip;
 
