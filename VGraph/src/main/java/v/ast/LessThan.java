@@ -13,7 +13,14 @@ public class LessThan implements ASTNode{
     }
 
     @Override
-    public Object execute(Map<String, Object> symbolTable){
-        return ((int) expression1.execute(symbolTable) < (int) expression2.execute(symbolTable));
+    public Object execute(Map<String, Object> symbolTable) {
+        Object left = expression1.execute(symbolTable);
+        Object right = expression2.execute(symbolTable);
+
+        int leftValue = (left instanceof Double) ? ((Double) left).intValue() : (int) left;
+        int rightValue = (right instanceof Double) ? ((Double) right).intValue() : (int) right;
+
+        return leftValue < rightValue;
     }
+
 }

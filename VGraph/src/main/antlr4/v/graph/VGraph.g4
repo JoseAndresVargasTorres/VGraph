@@ -198,17 +198,27 @@ funCall returns [ASTNode node]:
 
 //Declaracion de variables
 var_decl returns [ASTNode node]:
+    // declaración simple
     PAR_OPEN type PAR_CLOSE id1=ID {
-        Map<String,ASTNode> decl_map = new HashMap<String,ASTNode>();
-        decl_map.put($id1.text,$type.node);
+        Map<String, ASTNode> decl_map = new HashMap<>();
+        decl_map.put($id1.text, $type.node);
     }
     (COMA id2=ID {
-        decl_map.put($id2.text,$type.node);
-    }
-    )*
+        decl_map.put($id2.text, $type.node);
+    })*
     SEMICOLON
-    {$node = new VarDecl(decl_map);}
+    {
+        $node = new VarDecl(decl_map);
+    }
+
+    // declaración + asignación
+    | PAR_OPEN type PAR_CLOSE vd1=var_assign {
+        Map<String, ASTNode> decl_map = new HashMap<>();
+        decl_map.put($vd1.id.getText(), $vd1.value);
+        $node = new VarDecl2($type.node, decl_map);
+    }
 ;
+
 
 type returns [ASTNode node]:
     INT {$node = new Type($INT.text);}
@@ -216,10 +226,15 @@ type returns [ASTNode node]:
 ;
 
 //Asignacion de variables
-var_assign returns [ASTNode node]:
-    ID ASSIGN expression SEMICOLON
-    {$node = new VarAssign($ID.text,$expression.node);}
+var_assign returns [ASTNode node, Token id, ASTNode value]:
+    idTok=ID ASSIGN expr=expression SEMICOLON
+    {
+        $node = new VarAssign($idTok.text, $expr.node);
+        $id = $idTok;
+        $value = $expr.node;
+    }
 ;
+
 
 //Operaciones
 expression returns [ASTNode node]:
