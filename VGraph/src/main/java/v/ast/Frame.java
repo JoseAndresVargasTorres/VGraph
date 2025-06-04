@@ -1,18 +1,23 @@
 package v.ast;
+import java.util.List;
 import java.util.Map;
 
 public class Frame implements ASTNode {
-    private final ASTNode sentence;
+    private final List<ASTNode> sentences;
 
-    public Frame(ASTNode sentence) {
-        this.sentence = sentence;
+    // Constructor que acepta una lista de sentencias
+    public Frame(List<ASTNode> sentences) {
+        this.sentences = sentences;
     }
 
     @Override
     public Object execute(Map<String, Object> symbolTable) {
-
-        if (sentence != null) {
-            sentence.execute(symbolTable);
+        if (sentences != null) {
+            for (ASTNode sentence : sentences) {
+                if (sentence != null) {
+                    sentence.execute(symbolTable);
+                }
+            }
         }
         return null;
     }

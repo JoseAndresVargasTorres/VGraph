@@ -93,6 +93,8 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
             return visit(ctx.wait_command());
         } else if (ctx.frame() != null) {
             return visit(ctx.frame());
+        } else if (ctx.clear_command() != null) {
+            return visit(ctx.clear_command());
         }
         return "";
     }
@@ -101,7 +103,12 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     public String visitFrame(VGraphParser.FrameContext ctx) {
         StringBuilder sb = new StringBuilder();
         sb.append(indent()).append("// === FRAME START ===\n");
-        sb.append(visit(ctx.se)); // sentence dentro del frame
+
+        // Procesar todas las sentencias dentro del frame
+        for (VGraphParser.SentenceContext sentence : ctx.sentence()) {
+            sb.append(visit(sentence));
+        }
+
         sb.append(indent()).append("// === FRAME END ===\n");
         return sb.toString();
     }
@@ -117,16 +124,40 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         StringBuilder sb = new StringBuilder();
         String type = visit(ctx.type());
 
-        sb.append(indent()).append(type).append(" ").append(ctx.id1.getText());
+        // Verificar si es declaración con asignación usando ctx.expression()
+        if (ctx.expression() != null) {
+            // Caso: (int) x = -1.5;
+            String varName = ctx.id1.getText(); // Usar id1 label
+            String value = visit(ctx.expression());
 
-        // Variables adicionales - usar la lista completa de IDs
-        List<TerminalNode> allIds = ctx.ID();
-        // El primer ID ya lo usamos (id1), los demás son id2
-        for (int i = 1; i < allIds.size(); i++) {
-            sb.append(", ").append(allIds.get(i).getText());
+            // Convertir valores decimales a enteros si el tipo es int
+            if (type.equals("int") && value.contains(".")) {
+                try {
+                    double doubleValue = Double.parseDouble(value);
+                    value = String.valueOf((int) doubleValue);
+                } catch (NumberFormatException e) {
+                    // Si no es un número directo, mantener la expresión
+                }
+            }
+
+            sb.append(indent()).append(type).append(" ").append(varName).append(" = ").append(value).append(";\n");
+        } else {
+            // Caso: (int) x, y, t;
+            sb.append(indent()).append(type).append(" ");
+
+            // Variable principal (id1)
+            sb.append(ctx.id1.getText());
+
+            // Variables adicionales (usar la lista completa de IDs)
+            List<TerminalNode> allIds = ctx.ID();
+            // El primer ID ya lo usamos (id1), los demás son adicionales
+            for (int i = 1; i < allIds.size(); i++) {
+                sb.append(", ").append(allIds.get(i).getText());
+            }
+
+            sb.append(";\n");
         }
 
-        sb.append(";\n");
         return sb.toString();
     }
 
@@ -143,6 +174,16 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     @Override
     public String visitVar_assign(VGraphParser.Var_assignContext ctx) {
         String expr = visit(ctx.expression());
+
+        // Convertir valores decimales a enteros si es necesario
+        if (expr.contains(".")) {
+            try {
+                double doubleValue = Double.parseDouble(expr);
+                expr = String.valueOf((int) doubleValue);
+            } catch (NumberFormatException e) {
+                // Si no es un número directo, mantener la expresión original
+            }
+        }
 
         // Si la expresión es un color (string), mantenerla como string
         if (expr.startsWith("\"") && expr.endsWith("\"")) {

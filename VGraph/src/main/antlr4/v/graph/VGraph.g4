@@ -11,7 +11,6 @@ program:
     {
         List<ASTNode> runBody = new ArrayList<ASTNode>();
         runBody.add($s1.node);
-
     }
     (s2=sentence  {runBody.add($s2.node);} )*
     {
@@ -22,7 +21,6 @@ program:
     }
 ;
 
-//Sentencias: frames, loops, funciones, Ifs, declaraciones, asignaciones
 sentence returns [ASTNode node]:
     conditional {$node = $conditional.node;}
     | var_decl  {$node = $var_decl.node;}
@@ -36,34 +34,33 @@ sentence returns [ASTNode node]:
     | loop_command {$node = $loop_command.node;}
     | wait_command {$node = $wait_command.node;}
     | frame {$node = $frame.node;}
-
+    | clear_command {$node = $clear_command.node;}
 ;
 
-//Prints
 println returns [ASTNode node]:
     PRINTLN expression SEMICOLON
     {$node = new Println($expression.node);}
 ;
 
-
-//**************************************************************************************************************************************
 wait_command returns [ASTNode node]:
     WAIT PAR_OPEN e=expression PAR_CLOSE SEMICOLON {$node = new WaitComm($e.node);}
 ;
 
 clear_command returns [ASTNode node]:
-CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();};
+    CLEAR PAR_OPEN PAR_CLOSE SEMICOLON {$node = new ClearComm();}
+;
 
-
-loop_command returns [ASTNode node]
-: LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
-    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);};
+loop_command returns [ASTNode node]:
+    LOOP PAR_OPEN e1=var_assign e2=comparison SEMICOLON e3=increment_loop
+    PAR_CLOSE BRACKET_OPEN e4=body BRACKET_CLOSE{$node = new LoopComm($e1.node,$e2.node,$e3.node,$e4.list);}
+;
 
 body returns [List<ASTNode> list]:
 {
     $list = new ArrayList<ASTNode>();
 }
- (s=sentence { $list.add($s.node); })*;
+ (s=sentence { $list.add($s.node); })*
+;
 
 increment_loop returns [ASTNode node]:
     ID ASSIGN expression
@@ -77,9 +74,8 @@ comparison returns [ASTNode node]:
     | e1=operand LEQ e2=operand {$node = new LessOrEqual($e1.node,$e2.node);}
     | e1=operand EQ e2=operand {$node = new Equal($e1.node,$e2.node);}
     | e1=operand NEQ e2=operand {$node = new NotEqual($e1.node,$e2.node);}
-    ;
-//**************************************************************************************************************************************
-//Ifs
+;
+
 conditional returns [ASTNode node]:
     IF PAR_OPEN cond=expression PAR_CLOSE
     {
@@ -113,27 +109,31 @@ conditional returns [ASTNode node]:
     }
 ;
 
-
-//declaracion de frame
 frame returns [ASTNode node]:
-     FRAME BRACKET_OPEN (se=sentence)* BRACKET_CLOSE
-          {
-            $node = new Frame($se.node);
-          };
+     FRAME BRACKET_OPEN
+     {
+         List<ASTNode> frameBody = new ArrayList<>();
+     }
+     (se=sentence { frameBody.add($se.node); })*
+     BRACKET_CLOSE
+     {
+         $node = new Frame(frameBody);
+     }
+;
 
-//Declaracion de setcolor
 setcolor returns [ASTNode node]:
      SETCOLOR PAR_OPEN t=expression PAR_CLOSE SEMICOLON
           {
             $node = new Setcolor($t.node);
-          };
+          }
+;
 
-//Declaracion de draw
 draw returns [ASTNode node]:
     DRAW s=shapeCall SEMICOLON
     {
          $node = new shapeCall($s.node);
-    };
+    }
+;
 
 shapeCall returns [ASTNode node]:
     LINE PAR_OPEN a=expression COMA b=expression COMA c=expression COMA d=expression PAR_CLOSE
@@ -144,19 +144,16 @@ shapeCall returns [ASTNode node]:
         {
             $node = new DrawRect($x.node, $y.node, $w.node, $h.node);
         }
-
     |CIRCLE PAR_OPEN x=expression COMA y=expression COMA r=expression PAR_CLOSE
         {
             $node = new DrawCircle($x.node, $y.node, $r.node);
         }
-
     | PIXEL PAR_OPEN x=expression COMA y=expression PAR_CLOSE
         {
             $node = new DrawPixel($x.node, $y.node);
-        };
+        }
+;
 
-
-//Funciones
 function returns [ASTNode node]:
     FUNCTION funID=ID
         {
@@ -178,7 +175,6 @@ function returns [ASTNode node]:
         }
 ;
 
-//Llamadas a funciones ya creadas
 funCall returns [ASTNode node]:
     funID=ID
     {
@@ -196,36 +192,35 @@ funCall returns [ASTNode node]:
     SEMICOLON
 ;
 
-//Declaracion de variables
+// CORREGIDA: Declaración de variables con labels correctos
 var_decl returns [ASTNode node]:
-    // declaración simple
+    // Caso 1: declaración simple: (int) x, y, t;
     PAR_OPEN type PAR_CLOSE id1=ID {
         Map<String, ASTNode> decl_map = new HashMap<>();
-        decl_map.put($id1.text, $type.node);
+        decl_map.put($id1.text, null);
     }
     (COMA id2=ID {
-        decl_map.put($id2.text, $type.node);
+        decl_map.put($id2.text, null);
     })*
     SEMICOLON
     {
-        $node = new VarDecl(decl_map);
+        $node = new VarDecl($type.node, decl_map);
     }
 
-    // declaración + asignación
-    | PAR_OPEN type PAR_CLOSE vd1=var_assign {
+    // Caso 2: declaración con asignación: (int) x = -1.5;
+    | PAR_OPEN type PAR_CLOSE id1=ID ASSIGN expr=expression SEMICOLON
+    {
         Map<String, ASTNode> decl_map = new HashMap<>();
-        decl_map.put($vd1.id.getText(), $vd1.value);
+        decl_map.put($id1.text, $expr.node);
         $node = new VarDecl2($type.node, decl_map);
     }
 ;
-
 
 type returns [ASTNode node]:
     INT {$node = new Type($INT.text);}
     | COLOR {$node = new Type($COLOR.text);}
 ;
 
-//Asignacion de variables
 var_assign returns [ASTNode node, Token id, ASTNode value]:
     idTok=ID ASSIGN expr=expression SEMICOLON
     {
@@ -235,8 +230,6 @@ var_assign returns [ASTNode node, Token id, ASTNode value]:
     }
 ;
 
-
-//Operaciones
 expression returns [ASTNode node]:
     operand {$node = $operand.node;}
     | comparison {$node = $comparison.node;}
@@ -269,7 +262,6 @@ cos returns [ASTNode node]:
     {$node = new Cos($expression.node);}
 ;
 
-//Terminos Basicos
 term returns [ASTNode node]:
     NUMBER {
         if($NUMBER.text.contains(".")){$node = new Constant(Double.parseDouble($NUMBER.text));}
@@ -283,7 +275,7 @@ term returns [ASTNode node]:
     | sin {$node = $sin.node;}
 ;
 
-//Palabras clave
+// Tokens
 DRAW: 'draw';
 SETCOLOR: 'setcolor';
 FRAME: 'frame';
@@ -304,15 +296,14 @@ ELSEIF: 'elseif';
 PRINTLN: 'println';
 FUNCTION: 'function';
 CLEAR: 'clear';
+RETURN: 'return';
 
-//Operadores
 PLUS: '+';
 MINUS: '-';
 MULT: '*';
 DIV: '/';
 MODULUS: '%';
 
-//Comparadores
 GT: '>';
 LT: '<';
 GEQ: '>=';
@@ -321,8 +312,6 @@ EQ: '==';
 NEQ: '!=';
 ASSIGN: '=';
 
-
-//Delimitadores
 BRACKET_OPEN: '{';
 BRACKET_CLOSE: '}';
 PAR_OPEN: '(';
@@ -332,20 +321,14 @@ COMA: ',';
 DOT: '.';
 SEMICOLON: ';';
 
-//tipos
 BOOLEAN: 'true' | 'false';
 INT: 'int';
 COLOR: 'color';
 COLOR_VALUES:'negro'| 'blanco'| 'rojo'| 'verde'| 'azul'| 'amarillo'| 'cyan'| 'magenta'| 'marron';
 
-
-//Comentarios
 HASHTAG_COMMENT: '#' ~[\r\n]* -> skip;
 
-//Identificadores
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
-
 NUMBER: '-'? [0-9]+ ('.' [0-9]+)?;
 
 WS: [ \t\n\r]+ -> skip;
-
