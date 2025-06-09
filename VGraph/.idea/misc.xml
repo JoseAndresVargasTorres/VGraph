@@ -6,7 +6,7 @@
         <PerGrammarGenerationSettings>
           <option name="fileName" value="$PROJECT_DIR$/src/main/antlr4/v/graph/VGraph.g4" />
           <option name="autoGen" value="true" />
-          <option name="outputDir" value="C:\Users\josev\OneDrive\Documentos\Semestre II 2025\Compiladores e Intérpretes\Proyecto\VGraph\VGraph\src\main\java" />
+          <option name="outputDir" value="$PROJECT_DIR$/src/main/java" />
           <option name="libDir" value="" />
           <option name="encoding" value="" />
           <option name="pkg" value="v.graph" />

@@ -15,6 +15,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Properties;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.Path;
 
 // Importaciones de ANTLR
 import org.antlr.v4.runtime.CharStream;
@@ -37,9 +41,18 @@ public class MainIDE extends JFrame {
     private JButton loadButton;
     private JButton saveButton;
     private JButton runButton;
+    private JButton stopButton;
     private JFileChooser fileChooser;
     private File currentFile;
     private static final String EXTENSION = "vgraph";
+
+    // Configuración FPGA
+    private static final String CONFIG_FILE = "config.properties";
+    private static final String GENERATED_DIR = "generated";
+    private static final String MAIN_C_FILE = "main.c";
+    private Properties config;
+    private Process currentFpgaProcess = null;
+    private boolean executionRunning = false;
 
     // ErrorListener simple para capturar errores
     private static class SimpleErrorListener implements ANTLRErrorListener {
@@ -53,42 +66,8 @@ public class MainIDE extends JFrame {
         @Override
         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol,
                                 int line, int charPositionInLine, String msg, RecognitionException e) {
-
-            // Mejorar y traducir mensajes de error
-            String errorMsg = "Error at line " + line + ":" + charPositionInLine + " - ";
-
-            // Traducir mensajes comunes de ANTLR
-            if (msg.contains("missing ';'")) {
-                errorMsg += "Missing semicolon";
-            } else if (msg.contains("missing ')'")) {
-                errorMsg += "Missing closing parenthesis ')'";
-            } else if (msg.contains("missing '('")) {
-                errorMsg += "Missing opening parenthesis '('";
-            } else if (msg.contains("missing '}'")) {
-                errorMsg += "Missing closing brace '}'";
-            } else if (msg.contains("missing '{'")) {
-                errorMsg += "Missing opening brace '{'";
-            } else if (msg.contains("mismatched input")) {
-                errorMsg += "Unexpected token '" + getTokenText(offendingSymbol) + "'";
-            } else if (msg.contains("expecting")) {
-                errorMsg += "Expected valid expression or statement";
-            } else {
-                // Mensaje genérico en inglés
-                errorMsg += msg.replace("extraneous input", "unexpected input")
-                        .replace("no viable alternative", "invalid syntax");
-            }
-
+            String errorMsg = "Error at line " + line + ":" + charPositionInLine + " - " + msg;
             errors.add(errorMsg);
-            if (output != null) {
-                output.append(errorMsg + "\n");
-            }
-        }
-
-        private String getTokenText(Object token) {
-            if (token instanceof Token) {
-                return ((Token) token).getText();
-            }
-            return "unknown";
         }
 
         @Override
@@ -117,13 +96,47 @@ public class MainIDE extends JFrame {
     }
 
     public MainIDE() {
-        setTitle("VGraph IDE");
+        setTitle("VGraph IDE - FPGA Compiler");
         setSize(1000, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
+        initializeConfig();
         initComponents();
         setVisible(true);
+    }
+
+    private void initializeConfig() {
+        config = new Properties();
+
+        // Crear archivo de configuración si no existe
+        File configFile = new File(CONFIG_FILE);
+        if (!configFile.exists()) {
+            createDefaultConfig();
+        }
+
+        // Cargar configuración
+        try (FileInputStream fis = new FileInputStream(CONFIG_FILE)) {
+            config.load(fis);
+        } catch (IOException e) {
+            showError("Error loading configuration: " + e.getMessage());
+            createDefaultConfig();
+        }
+    }
+
+    private void createDefaultConfig() {
+        config.setProperty("fpga.host", "172.16.1.2");
+        config.setProperty("fpga.user", "root");
+        config.setProperty("fpga.password", "temppwd");
+        config.setProperty("fpga.port", "22");
+        config.setProperty("fpga.remote.path", "/home/ubuntu/vgraph");
+        config.setProperty("compile.timeout", "30");
+
+        try (FileOutputStream fos = new FileOutputStream(CONFIG_FILE)) {
+            config.store(fos, "VGraph FPGA Configuration");
+        } catch (IOException e) {
+            showError("Error creating configuration file: " + e.getMessage());
+        }
     }
 
     private void initComponents() {
@@ -139,7 +152,6 @@ public class MainIDE extends JFrame {
         lineNumbers.setFocusable(false);
         lineNumbers.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
 
-        // Configurar Ctrl+Z para deshacer
         setupUndoRedo();
 
         // Actualizar números de línea cuando cambie el texto
@@ -178,13 +190,18 @@ public class MainIDE extends JFrame {
         loadButton = new JButton("Load");
         saveButton = new JButton("Save");
         compileButton = new JButton("Compile");
-        runButton = new JButton("Run");
+        runButton = new JButton("Run on FPGA");
+        stopButton = new JButton("Stop Execution");
+        stopButton.setEnabled(false);
+        stopButton.setBackground(new Color(220, 53, 69));
+        stopButton.setForeground(Color.WHITE);
 
         toolbar.add(loadButton);
         toolbar.add(saveButton);
         toolbar.add(new JToolBar.Separator());
         toolbar.add(compileButton);
         toolbar.add(runButton);
+        toolbar.add(stopButton);
 
         // Configurar file chooser
         fileChooser = new JFileChooser();
@@ -200,21 +217,17 @@ public class MainIDE extends JFrame {
         saveButton.addActionListener(e -> saveFile());
         compileButton.addActionListener(e -> compileCode());
         runButton.addActionListener(e -> executeCode());
+        stopButton.addActionListener(e -> stopExecution());
     }
 
-    // Configurar Ctrl+Z para deshacer y Ctrl+Y para rehacer
     private void setupUndoRedo() {
         UndoManager undoManager = new UndoManager();
         Document document = codeArea.getDocument();
-
-        // Agregar listener para cambios en el documento
         document.addUndoableEditListener(undoManager);
 
-        // Configurar acciones de teclado
         InputMap inputMap = codeArea.getInputMap(JComponent.WHEN_FOCUSED);
         ActionMap actionMap = codeArea.getActionMap();
 
-        // Ctrl+Z para deshacer
         inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
         actionMap.put("undo", new AbstractAction() {
             @Override
@@ -225,7 +238,6 @@ public class MainIDE extends JFrame {
             }
         });
 
-        // Ctrl+Y para rehacer
         inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
         actionMap.put("redo", new AbstractAction() {
             @Override
@@ -271,8 +283,7 @@ public class MainIDE extends JFrame {
                 outputArea.setText("");
                 setTitle("VGraph IDE - " + currentFile.getName());
             } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "Error loading file: " + e.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                showError("Error loading file: " + e.getMessage());
             }
         }
     }
@@ -298,8 +309,7 @@ public class MainIDE extends JFrame {
             JOptionPane.showMessageDialog(this, "File saved successfully.",
                     "Save", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Error saving file: " + e.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            showError("Error saving file: " + e.getMessage());
         }
     }
 
@@ -314,29 +324,21 @@ public class MainIDE extends JFrame {
         }
 
         try {
-            // Limpiar resaltado anterior
             clearHighlights();
-
-            // Lista para recolectar TODOS los errores
             List<String> allErrors = new ArrayList<>();
 
-            // Crear input stream del código
             CharStream input = CharStreams.fromString(codeArea.getText());
-
-            // ANÁLISIS LÉXICO
             VGraphLexer lexer = new VGraphLexer(input);
             SimpleErrorListener lexerErrorListener = new SimpleErrorListener(null);
             lexer.removeErrorListeners();
             lexer.addErrorListener(lexerErrorListener);
 
-            // ANÁLISIS SINTÁCTICO
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             VGraphParser parser = new VGraphParser(tokens);
             SimpleErrorListener parserErrorListener = new SimpleErrorListener(null);
             parser.removeErrorListeners();
             parser.addErrorListener(parserErrorListener);
 
-            // Intentar parsear SIEMPRE para encontrar todos los errores sintácticos
             VGraphParser.ProgramContext tree = null;
             try {
                 tree = parser.program();
@@ -344,39 +346,33 @@ public class MainIDE extends JFrame {
                 // Continúa aunque falle el parsing para mostrar errores
             }
 
-            // Recolectar errores léxicos y sintácticos
             allErrors.addAll(lexerErrorListener.getErrors());
             allErrors.addAll(parserErrorListener.getErrors());
 
-            // ANÁLISIS SEMÁNTICO - Hacer SIEMPRE, incluso si hay errores sintácticos
             if (tree != null) {
                 try {
                     SemanticValidator semanticValidator = new SemanticValidator();
                     semanticValidator.visit(tree);
                     allErrors.addAll(semanticValidator.getSemanticErrors());
                 } catch (Exception e) {
-                    // Si falla el análisis semántico, agregar error genérico
                     allErrors.add("Error at line 1 - Semantic analysis failed due to syntax errors");
                 }
             }
 
-            // Mostrar TODOS los errores encontrados
             if (!allErrors.isEmpty()) {
                 outputArea.setForeground(Color.RED);
-                outputArea.setText("ERRORS FOUND (" + allErrors.size() + "):\n\n");
+                outputArea.setText("COMPILATION ERRORS FOUND (" + allErrors.size() + "):\n\n");
 
-                // Mostrar todos los errores numerados
                 for (int i = 0; i < allErrors.size(); i++) {
                     outputArea.append((i + 1) + ". " + allErrors.get(i) + "\n");
                 }
 
-                // Resaltar TODAS las líneas con errores
                 highlightAllErrorLines(allErrors);
             } else {
                 outputArea.setForeground(new Color(0, 150, 0));
-                outputArea.setText("BUILD SUCCESSFUL\n\n");
+                outputArea.setText("✅ COMPILATION SUCCESSFUL\n\n");
                 outputArea.append("Code compiled successfully with no errors.\n");
-                outputArea.append("Press 'Run' to generate C code.");
+                outputArea.append("Press 'Run on FPGA' to execute on hardware.\n");
             }
 
         } catch (Exception e) {
@@ -385,7 +381,13 @@ public class MainIDE extends JFrame {
         }
     }
 
+    // MÉTODO PRINCIPAL - EJECUCIÓN AUTOMATIZADA EN FPGA
     private void executeCode() {
+        if (executionRunning) {
+            showError("Execution already in progress. Stop current execution first.");
+            return;
+        }
+
         outputArea.setText("");
         outputArea.setForeground(Color.BLACK);
 
@@ -395,80 +397,234 @@ public class MainIDE extends JFrame {
             return;
         }
 
-        try {
-            // Limpiar resaltado anterior
-            clearHighlights();
+        // Deshabilitar botón Run y habilitar Stop
+        runButton.setEnabled(false);
+        stopButton.setEnabled(true);
+        executionRunning = true;
 
-            // Verificar errores antes de ejecutar
-            CharStream input = CharStreams.fromString(codeArea.getText());
-            VGraphLexer lexer = new VGraphLexer(input);
-            SimpleErrorListener errorListener = new SimpleErrorListener(null);
-            lexer.removeErrorListeners();
-            lexer.addErrorListener(errorListener);
+        // Ejecutar en hilo separado para no bloquear la interfaz
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                try {
+                    // PASO 1: VALIDAR CÓDIGO
+                    publish("🔍 STEP 1: Validating VGraph code...");
 
-            CommonTokenStream tokens = new CommonTokenStream(lexer);
-            VGraphParser parser = new VGraphParser(tokens);
-            parser.removeErrorListeners();
-            parser.addErrorListener(errorListener);
+                    clearHighlights();
+                    CharStream input = CharStreams.fromString(codeArea.getText());
+                    VGraphLexer lexer = new VGraphLexer(input);
+                    SimpleErrorListener errorListener = new SimpleErrorListener(null);
+                    lexer.removeErrorListeners();
+                    lexer.addErrorListener(errorListener);
 
-            VGraphParser.ProgramContext tree = parser.program();
+                    CommonTokenStream tokens = new CommonTokenStream(lexer);
+                    VGraphParser parser = new VGraphParser(tokens);
+                    parser.removeErrorListeners();
+                    parser.addErrorListener(errorListener);
 
-            // Recolectar todos los errores
-            List<String> allErrors = new ArrayList<>();
-            allErrors.addAll(errorListener.getErrors());
+                    VGraphParser.ProgramContext tree = parser.program();
 
-            // Si no hay errores sintácticos, verificar semánticos
-            if (allErrors.isEmpty()) {
-                SemanticValidator semanticValidator = new SemanticValidator();
-                semanticValidator.visit(tree);
-                allErrors.addAll(semanticValidator.getSemanticErrors());
-            }
+                    List<String> allErrors = new ArrayList<>();
+                    allErrors.addAll(errorListener.getErrors());
 
-            // Si hay errores, no ejecutar
-            if (!allErrors.isEmpty()) {
-                outputArea.setForeground(Color.RED);
-                outputArea.setText("Cannot execute code with errors.\n\n");
-                outputArea.append("Errors found:\n");
+                    if (allErrors.isEmpty()) {
+                        SemanticValidator semanticValidator = new SemanticValidator();
+                        semanticValidator.visit(tree);
+                        allErrors.addAll(semanticValidator.getSemanticErrors());
+                    }
 
-                for (String error : allErrors) {
-                    outputArea.append("• " + error + "\n");
+                    if (!allErrors.isEmpty()) {
+                        publish("❌ VALIDATION FAILED");
+                        for (String error : allErrors) {
+                            publish("• " + error);
+                        }
+                        return null;
+                    }
+
+                    publish("✅ Code validation successful!");
+
+                    // PASO 2: GENERAR CÓDIGO C
+                    publish("🔄 STEP 2: Generating C code...");
+                    VGraphCustomVisitor codeGenerator = new VGraphCustomVisitor();
+                    String generatedCCode = codeGenerator.visit(tree);
+                    publish("✅ C code generated successfully!");
+
+                    // PASO 3: GUARDAR ARCHIVO MAIN.C
+                    publish("📁 STEP 3: Saving main.c file...");
+                    if (!saveMainCFile(generatedCCode)) {
+                        publish("❌ Failed to save main.c file");
+                        return null;
+                    }
+                    publish("✅ File saved to ./" + GENERATED_DIR + "/" + MAIN_C_FILE);
+
+                    // PASO 4: TRANSFERIR A FPGA
+                    publish("📤 STEP 4: Transferring to FPGA via SCP...");
+                    if (!transferToFPGA()) {
+                        publish("❌ Failed to transfer file to FPGA");
+                        return null;
+                    }
+                    publish("✅ Transfer completed successfully!");
+
+                    // PASO 5: COMPILAR EN FPGA
+                    publish("🔨 STEP 5: Compiling on FPGA...");
+                    if (!compileOnFPGA()) {
+                        publish("❌ Compilation failed on FPGA");
+                        return null;
+                    }
+                    publish("✅ Compilation successful on FPGA!");
+
+                    // PASO 6: EJECUTAR EN FPGA
+                    publish("🚀 STEP 6: Executing on FPGA...");
+                    if (!executeOnFPGA()) {
+                        publish("❌ Execution failed on FPGA");
+                        return null;
+                    }
+                    publish("✅ Program running on FPGA!");
+                    publish("📺 Check FPGA display for visual output");
+                    publish("⏹️ Press 'Stop Execution' to terminate");
+
+                } catch (Exception e) {
+                    publish("❌ ERROR: " + e.getMessage());
                 }
-
-                outputArea.append("\nCompile the code to see all errors.");
-                highlightAllErrorLines(allErrors);
-                return;
+                return null;
             }
 
-            // Si no hay errores, generar código C
-            VGraphCustomVisitor visitor = new VGraphCustomVisitor();
-            String cCode = visitor.visit(tree);
+            @Override
+            protected void process(List<String> chunks) {
+                for (String message : chunks) {
+                    outputArea.append(message + "\n");
+                    outputArea.setCaretPosition(outputArea.getDocument().getLength());
 
-            // Mostrar código C generado
-            outputArea.setForeground(Color.BLUE);
-            outputArea.setText("C CODE GENERATED:\n");
-            outputArea.append("=" + "=".repeat(50) + "\n\n");
-            outputArea.append(cCode);
-            outputArea.append("\n" + "=".repeat(52) + "\n");
-            outputArea.append("Code ready to transfer to FPGA.");
+                    // Colorear mensajes
+                    if (message.contains("❌")) {
+                        outputArea.setForeground(Color.RED);
+                    } else if (message.contains("✅")) {
+                        outputArea.setForeground(new Color(0, 150, 0));
+                    } else if (message.contains("🔍") || message.contains("🔄") ||
+                            message.contains("📁") || message.contains("📤") ||
+                            message.contains("🔨") || message.contains("🚀")) {
+                        outputArea.setForeground(new Color(0, 100, 200));
+                    } else {
+                        outputArea.setForeground(Color.BLACK);
+                    }
+                }
+            }
 
-        } catch (Exception e) {
-            outputArea.setForeground(Color.RED);
-            outputArea.setText("EXECUTION ERROR:\n\n" + e.getMessage());
-            e.printStackTrace();
+            @Override
+            protected void done() {
+                // Re-habilitar botones
+                runButton.setEnabled(true);
+                stopButton.setEnabled(false);
+                executionRunning = false;
+            }
+        };
+
+        worker.execute();
+    }
+
+    private boolean saveMainCFile(String cCode) {
+        try {
+            // Crear directorio generated si no existe
+            Path generatedDir = Paths.get(GENERATED_DIR);
+            if (!Files.exists(generatedDir)) {
+                Files.createDirectories(generatedDir);
+            }
+
+            // Guardar archivo main.c
+            Path mainCPath = generatedDir.resolve(MAIN_C_FILE);
+            Files.write(mainCPath, cCode.getBytes());
+
+            return true;
+        } catch (IOException e) {
+            showError("Error saving main.c: " + e.getMessage());
+            return false;
         }
     }
 
-    // Método unificado para resaltar errores - CORREGIDO
+    private boolean transferToFPGA() {
+        try {
+            String host = config.getProperty("fpga.host");
+            String user = config.getProperty("fpga.user");
+            String remotePath = config.getProperty("fpga.remote.path");
+
+            String localFile = GENERATED_DIR + "/" + MAIN_C_FILE;
+            String remoteFile = user + "@" + host + ":" + remotePath + "/" + MAIN_C_FILE;
+
+            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", config.getProperty("fpga.password"),
+                    "scp", localFile, remoteFile);
+
+            Process process = pb.start();
+            int exitCode = process.waitFor();
+
+            return exitCode == 0;
+        } catch (Exception e) {
+            showError("Error during SCP transfer: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean compileOnFPGA() {
+        try {
+            String host = config.getProperty("fpga.host");
+            String user = config.getProperty("fpga.user");
+            String remotePath = config.getProperty("fpga.remote.path");
+
+            String command = "cd " + remotePath + " && gcc main.c graphics.c -o main -lm";
+
+            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", config.getProperty("fpga.password"),
+                    "ssh", user + "@" + host, command);
+
+            Process process = pb.start();
+            int exitCode = process.waitFor();
+
+            return exitCode == 0;
+        } catch (Exception e) {
+            showError("Error during compilation: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean executeOnFPGA() {
+        try {
+            String host = config.getProperty("fpga.host");
+            String user = config.getProperty("fpga.user");
+            String remotePath = config.getProperty("fpga.remote.path");
+
+            String command = "cd " + remotePath + " && sudo ./main";
+
+            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", config.getProperty("fpga.password"),
+                    "ssh", user + "@" + host, command);
+
+            currentFpgaProcess = pb.start();
+
+            // No esperamos a que termine porque puede ejecutar indefinidamente
+            return true;
+        } catch (Exception e) {
+            showError("Error during execution: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void stopExecution() {
+        if (currentFpgaProcess != null && currentFpgaProcess.isAlive()) {
+            currentFpgaProcess.destroyForcibly();
+            outputArea.append("\n🛑 Execution stopped by user\n");
+            outputArea.setForeground(new Color(255, 140, 0));
+        }
+
+        runButton.setEnabled(true);
+        stopButton.setEnabled(false);
+        executionRunning = false;
+    }
+
     private void highlightAllErrorLines(List<String> errors) {
         Highlighter highlighter = codeArea.getHighlighter();
 
         try {
-            // Color rojo claro para resaltar errores
             Highlighter.HighlightPainter painter =
                     new DefaultHighlighter.DefaultHighlightPainter(new Color(255, 200, 200));
 
             for (String error : errors) {
-                // Buscar patrón "line X" o "line X:Y"
                 Pattern pattern = Pattern.compile("line (\\d+)");
                 Matcher matcher = pattern.matcher(error);
 
@@ -492,6 +648,10 @@ public class MainIDE extends JFrame {
 
     private void clearHighlights() {
         codeArea.getHighlighter().removeAllHighlights();
+    }
+
+    private void showError(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
     }
 
     public static void main(String[] args) {
