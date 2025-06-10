@@ -11,11 +11,26 @@ int main() {
 
     clear_screen();
 
-int x = 200;
-int y = 150;
-int radio = 75;
-setcolor("azul");
-circle(x, y, radio);
+int x, y, t;
+char* c;
+// === FRAME START ===
+t = 0;
+while (t < 360) {
+    x = 320 + t * cos(t * 3.1416 / 180);
+    y = 240 + t * sin(t * 3.1416 / 180);
+    if ((t % 3 == 0)) {
+        c = "rojo";
+    } else if ((t % 3 == 1)) {
+        c = "azul";
+    } else {
+        c = "verde";
+    }
+    setcolor(c);
+    pixel(x, y);
+    wait_seconds(1);
+    t = t + 5;
+}
+// === FRAME END ===
 
     wait_seconds(3);
     cleanup_framebuffer();

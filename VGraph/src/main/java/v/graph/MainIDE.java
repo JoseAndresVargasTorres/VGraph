@@ -381,7 +381,7 @@ public class MainIDE extends JFrame {
         }
     }
 
-    // MÉTODO PRINCIPAL - EJECUCIÓN AUTOMATIZADA EN FPGA
+    // MÉTODO PRINCIPAL - EJECUCIÓN AUTOMATIZADA EN FPGA - CORREGIDO
     private void executeCode() {
         if (executionRunning) {
             showError("Execution already in progress. Stop current execution first.");
@@ -403,9 +403,9 @@ public class MainIDE extends JFrame {
         executionRunning = true;
 
         // Ejecutar en hilo separado para no bloquear la interfaz
-        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+        SwingWorker<Boolean, String> worker = new SwingWorker<Boolean, String>() {
             @Override
-            protected Void doInBackground() throws Exception {
+            protected Boolean doInBackground() throws Exception {
                 try {
                     // PASO 1: VALIDAR CÓDIGO
                     publish("🔍 STEP 1: Validating VGraph code...");
@@ -438,7 +438,7 @@ public class MainIDE extends JFrame {
                         for (String error : allErrors) {
                             publish("• " + error);
                         }
-                        return null;
+                        return false; // Indicar fallo
                     }
 
                     publish("✅ Code validation successful!");
@@ -453,7 +453,7 @@ public class MainIDE extends JFrame {
                     publish("📁 STEP 3: Saving main.c file...");
                     if (!saveMainCFile(generatedCCode)) {
                         publish("❌ Failed to save main.c file");
-                        return null;
+                        return false;
                     }
                     publish("✅ File saved to ./" + GENERATED_DIR + "/" + MAIN_C_FILE);
 
@@ -461,7 +461,7 @@ public class MainIDE extends JFrame {
                     publish("📤 STEP 4: Transferring to FPGA via SCP...");
                     if (!transferToFPGA()) {
                         publish("❌ Failed to transfer file to FPGA");
-                        return null;
+                        return false;
                     }
                     publish("✅ Transfer completed successfully!");
 
@@ -469,7 +469,7 @@ public class MainIDE extends JFrame {
                     publish("🔨 STEP 5: Compiling on FPGA...");
                     if (!compileOnFPGA()) {
                         publish("❌ Compilation failed on FPGA");
-                        return null;
+                        return false;
                     }
                     publish("✅ Compilation successful on FPGA!");
 
@@ -477,16 +477,18 @@ public class MainIDE extends JFrame {
                     publish("🚀 STEP 6: Executing on FPGA...");
                     if (!executeOnFPGA()) {
                         publish("❌ Execution failed on FPGA");
-                        return null;
+                        return false;
                     }
                     publish("✅ Program running on FPGA!");
                     publish("📺 Check FPGA display for visual output");
                     publish("⏹️ Press 'Stop Execution' to terminate");
 
+                    return true; // Indicar éxito
+
                 } catch (Exception e) {
                     publish("❌ ERROR: " + e.getMessage());
+                    return false; // Indicar fallo
                 }
-                return null;
             }
 
             @Override
@@ -512,10 +514,29 @@ public class MainIDE extends JFrame {
 
             @Override
             protected void done() {
-                // Re-habilitar botones
-                runButton.setEnabled(true);
-                stopButton.setEnabled(false);
-                executionRunning = false;
+                try {
+                    Boolean success = get(); // Obtener el resultado
+
+                    // SOLO deshabilitar Stop si hubo un error
+                    // Si fue exitoso, mantener Stop habilitado para permitir terminar el programa
+                    if (!success) {
+                        // Hubo un error, re-habilitar botones normalmente
+                        runButton.setEnabled(true);
+                        stopButton.setEnabled(false);
+                        executionRunning = false;
+                    } else {
+                        // Ejecución exitosa, mantener Stop habilitado
+                        // runButton permanece deshabilitado hasta que se pare la ejecución
+                        // stopButton permanece habilitado
+                        // executionRunning permanece true
+                    }
+
+                } catch (Exception e) {
+                    // Error en el worker, re-habilitar botones
+                    runButton.setEnabled(true);
+                    stopButton.setEnabled(false);
+                    executionRunning = false;
+                }
             }
         };
 
@@ -605,16 +626,175 @@ public class MainIDE extends JFrame {
         }
     }
 
+    /// MÉTODO STOPEXECUTION MEJORADO CON MÚLTIPLES ESTRATEGIAS
     private void stopExecution() {
+        outputArea.append("\n🛑 Stopping execution...\n");
+        outputArea.setForeground(new Color(255, 140, 0));
+
+        boolean stopped = false;
+
+        // ESTRATEGIA 1: Matar proceso local
         if (currentFpgaProcess != null && currentFpgaProcess.isAlive()) {
+            outputArea.append("🔸 Terminating local SSH process...\n");
             currentFpgaProcess.destroyForcibly();
-            outputArea.append("\n🛑 Execution stopped by user\n");
+
+            try {
+                // Esperar hasta 3 segundos para que termine
+                boolean terminated = currentFpgaProcess.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+                if (terminated) {
+                    outputArea.append("✅ Local process terminated\n");
+                    stopped = true;
+                } else {
+                    outputArea.append("⚠️ Local process did not terminate gracefully\n");
+                }
+            } catch (InterruptedException e) {
+                outputArea.append("⚠️ Interrupted while waiting for local process\n");
+            }
+        }
+
+        // ESTRATEGIA 2: Matar procesos remotos con múltiples comandos
+        try {
+            String host = config.getProperty("fpga.host");
+            String user = config.getProperty("fpga.user");
+            String password = config.getProperty("fpga.password");
+
+            outputArea.append("🔸 Sending kill signals to FPGA...\n");
+
+            // Lista de comandos para matar el proceso
+            String[] killCommands = {
+                    "sudo pkill -TERM main",           // Señal TERM primero (graceful)
+                    "sudo pkill -KILL main",           // Señal KILL si TERM no funciona
+                    "sudo pkill -f './main'",          // Matar por nombre completo
+                    "sudo pkill -f 'main'",            // Matar por nombre parcial
+                    "sudo killall main",               // killall como backup
+                    "sudo killall -9 main",            // killall con SIGKILL
+                    "sudo ps aux | grep main | grep -v grep | awk '{print $2}' | xargs sudo kill -9"  // Buscar y matar por PID
+            };
+
+            for (int i = 0; i < killCommands.length; i++) {
+                String command = killCommands[i];
+                outputArea.append("🔹 Executing: " + command + "\n");
+
+                ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
+                        "ssh", "-o", "ConnectTimeout=5", user + "@" + host, command);
+
+                try {
+                    Process killProcess = pb.start();
+                    boolean finished = killProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+
+                    if (finished) {
+                        int exitCode = killProcess.exitValue();
+                        if (exitCode == 0) {
+                            outputArea.append("✅ Kill command successful\n");
+                            stopped = true;
+                            // Probar unos comandos más para asegurar
+                            if (i < 3) continue;
+                            else break;
+                        } else {
+                            outputArea.append("⚠️ Kill command failed (exit code: " + exitCode + ")\n");
+                        }
+                    } else {
+                        outputArea.append("⚠️ Kill command timed out\n");
+                        killProcess.destroyForcibly();
+                    }
+                } catch (Exception e) {
+                    outputArea.append("❌ Error executing kill command: " + e.getMessage() + "\n");
+                }
+
+                // Pequeña pausa entre comandos
+                Thread.sleep(500);
+            }
+
+        } catch (Exception e) {
+            outputArea.append("❌ Error during remote kill: " + e.getMessage() + "\n");
+        }
+
+        // ESTRATEGIA 3: Verificar que realmente se detuvo
+        try {
+            outputArea.append("🔸 Verifying process termination...\n");
+
+            String host = config.getProperty("fpga.host");
+            String user = config.getProperty("fpga.user");
+            String password = config.getProperty("fpga.password");
+
+            String checkCommand = "ps aux | grep main | grep -v grep";
+
+            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
+                    "ssh", "-o", "ConnectTimeout=5", user + "@" + host, checkCommand);
+
+            Process checkProcess = pb.start();
+            boolean finished = checkProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+
+            if (finished) {
+                // Leer la salida para ver si hay procesos main corriendo
+                BufferedReader reader = new BufferedReader(new InputStreamReader(checkProcess.getInputStream()));
+                String line;
+                boolean processFound = false;
+
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("main") && !line.contains("grep")) {
+                        processFound = true;
+                        outputArea.append("⚠️ Process still running: " + line + "\n");
+                    }
+                }
+
+                if (!processFound) {
+                    outputArea.append("✅ No main processes found - execution stopped\n");
+                    stopped = true;
+                } else {
+                    outputArea.append("❌ Some processes may still be running\n");
+                }
+            }
+
+        } catch (Exception e) {
+            outputArea.append("⚠️ Could not verify process termination: " + e.getMessage() + "\n");
+        }
+
+        // ESTRATEGIA 4: Como último recurso, reiniciar framebuffer
+        if (!stopped) {
+            try {
+                outputArea.append("🔸 Attempting framebuffer reset as last resort...\n");
+
+                String host = config.getProperty("fpga.host");
+                String user = config.getProperty("fpga.user");
+                String password = config.getProperty("fpga.password");
+
+                String resetCommand = "sudo systemctl restart display-manager || sudo fuser -k /dev/fb0 || sudo echo 'Framebuffer reset attempted'";
+
+                ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
+                        "ssh", "-o", "ConnectTimeout=10", user + "@" + host, resetCommand);
+
+                Process resetProcess = pb.start();
+                boolean finished = resetProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+
+                if (finished) {
+                    outputArea.append("✅ Framebuffer reset command executed\n");
+                } else {
+                    outputArea.append("⚠️ Framebuffer reset timed out\n");
+                    resetProcess.destroyForcibly();
+                }
+
+            } catch (Exception e) {
+                outputArea.append("❌ Error during framebuffer reset: " + e.getMessage() + "\n");
+            }
+        }
+
+        // Siempre re-habilitar botones al final
+        outputArea.append("\n🏁 Stop execution completed\n");
+        if (stopped) {
+            outputArea.append("✅ Execution successfully terminated\n");
+            outputArea.setForeground(new Color(0, 150, 0));
+        } else {
+            outputArea.append("⚠️ Execution may not have been completely terminated\n");
+            outputArea.append("💡 Try unplugging and reconnecting FPGA if display is still active\n");
             outputArea.setForeground(new Color(255, 140, 0));
         }
 
+        // Re-habilitar botones
         runButton.setEnabled(true);
         stopButton.setEnabled(false);
         executionRunning = false;
+        currentFpgaProcess = null;
     }
 
     private void highlightAllErrorLines(List<String> errors) {

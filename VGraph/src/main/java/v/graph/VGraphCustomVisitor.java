@@ -234,8 +234,7 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     @Override
     public String visitComparison(VGraphParser.ComparisonContext ctx) {
         String left = visit(ctx.e1);  // operand
-        String right = visit(ctx.e2); // operand
-
+        String right = visit(ctx.e2); // operandO
         String op = "";
         if (ctx.GT() != null) {
             op = ">";
@@ -258,17 +257,29 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     public String visitConditional(VGraphParser.ConditionalContext ctx) {
         StringBuilder sb = new StringBuilder();
 
-        // IF principal
-        sb.append(indent()).append("if ").append(visit(ctx.expression(0))).append(" {\n");
+        // IF principal - AGREGAR PARÉNTESIS AQUÍ
+        sb.append(indent()).append("if (").append(visit(ctx.expression(0))).append(") {\n");
         indentLevel++;
 
+        // Procesar sentencias del IF principal
+        // La gramática de ANTLR agrupa automáticamente las sentencias por bloque
+        // según la estructura del parse tree
+
         List<VGraphParser.SentenceContext> allSentences = ctx.sentence();
+        List<VGraphParser.ExpressionContext> allExpressions = ctx.expression();
 
-        // Dividir las sentencias entre if, elseif y else
+        // Determinar cuántas sentencias pertenecen a cada bloque
+        int totalBlocks = 1; // IF
+        if (ctx.ELSEIF() != null) totalBlocks += ctx.ELSEIF().size();
+        if (ctx.ELSE() != null) totalBlocks += 1;
+
+        // Dividir sentencias aproximadamente igual entre bloques
+        int sentencesPerBlock = allSentences.size() / totalBlocks;
         int sentenceIndex = 0;
-        int ifSentences = allSentences.size() / 3; // Dividir aproximadamente
 
-        for (int i = 0; i < ifSentences && i < allSentences.size(); i++) {
+        // Procesar sentencias del IF principal
+        int ifSentenceEnd = Math.min(sentencesPerBlock, allSentences.size());
+        for (int i = 0; i < ifSentenceEnd; i++) {
             sb.append(visit(allSentences.get(i)));
             sentenceIndex++;
         }
@@ -276,28 +287,35 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         indentLevel--;
         sb.append(indent()).append("}");
 
-        // ELSEIF
-        if (ctx.ELSEIF() != null && ctx.expression().size() > 1) {
-            sb.append(" else if ").append(visit(ctx.expression(1))).append(" {\n");
-            indentLevel++;
+        // ELSEIF blocks - AGREGAR PARÉNTESIS AQUÍ
+        if (ctx.ELSEIF() != null) {
+            List<TerminalNode> elseifTokens = ctx.ELSEIF();
 
-            // Sentencias del elseif
-            int elseifSentences = (allSentences.size() - ifSentences) / 2;
-            for (int i = 0; i < elseifSentences && sentenceIndex < allSentences.size(); i++) {
-                sb.append(visit(allSentences.get(sentenceIndex)));
-                sentenceIndex++;
+            for (int elseifIndex = 0; elseifIndex < elseifTokens.size(); elseifIndex++) {
+                // La expresión del elseif (elseifIndex + 1 porque la primera expresión es del IF)
+                if (elseifIndex + 1 < allExpressions.size()) {
+                    sb.append(" else if (").append(visit(allExpressions.get(elseifIndex + 1))).append(") {\n");
+                    indentLevel++;
+
+                    // Procesar sentencias del elseif
+                    int elseifSentenceEnd = Math.min(sentenceIndex + sentencesPerBlock, allSentences.size());
+                    for (int i = sentenceIndex; i < elseifSentenceEnd; i++) {
+                        sb.append(visit(allSentences.get(i)));
+                        sentenceIndex++;
+                    }
+
+                    indentLevel--;
+                    sb.append(indent()).append("}");
+                }
             }
-
-            indentLevel--;
-            sb.append(indent()).append("}");
         }
 
-        // ELSE
+        // ELSE block
         if (ctx.ELSE() != null) {
             sb.append(" else {\n");
             indentLevel++;
 
-            // Resto de sentencias van al else
+            // Procesar las sentencias restantes para el ELSE
             while (sentenceIndex < allSentences.size()) {
                 sb.append(visit(allSentences.get(sentenceIndex)));
                 sentenceIndex++;
