@@ -42,6 +42,15 @@ public class VarDecl2 implements ASTNode {
                                 "' de tipo color no puede ser asignada con " + value.getClass().getSimpleName());
                     }
                     break;
+                case "double":  // NUEVO CASO
+                    // Aceptar tanto Double como Integer para double
+                    if (value instanceof Integer) {
+                        value = ((Integer) value).doubleValue();
+                    } else if (!(value instanceof Double)) {
+                        throw new RuntimeException("Error de tipo: Variable '" + varName +
+                                "' de tipo double no puede ser asignada con " + value.getClass().getSimpleName());
+                    }
+                    break;
                 default:
                     throw new RuntimeException("Tipo desconocido: " + typeName);
             }

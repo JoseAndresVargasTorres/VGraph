@@ -4,13 +4,16 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import java.util.*;
 
 /**
- * Validador semántico simplificado - evita problemas con getSymbol()
+ * Validador semántico con soporte para double
  */
 public class SemanticValidator extends VGraphBaseVisitor<Void> {
 
     private Map<String, String> symbolTable = new HashMap<>();
     private Map<String, FunctionInfo> functionTable = new HashMap<>();
     private List<String> semanticErrors = new ArrayList<>();
+
+    // NUEVO: Set de tipos válidos
+    private static final Set<String> VALID_TYPES = new HashSet<>(Arrays.asList("int", "color", "double"));
 
     private static class FunctionInfo {
         String name;
@@ -63,6 +66,12 @@ public class SemanticValidator extends VGraphBaseVisitor<Void> {
     public Void visitVar_decl(VGraphParser.Var_declContext ctx) {
         String type = ctx.type().getText();
         int line = ctx.getStart().getLine();
+
+        // NUEVO: Validar que el tipo sea válido
+        if (!VALID_TYPES.contains(type)) {
+            addError("Unknown type '" + type + "'", line);
+            return null; // No continuar si el tipo es inválido
+        }
 
         // Variable principal (id1)
         String varName = ctx.id1.getText();
@@ -187,7 +196,9 @@ public class SemanticValidator extends VGraphBaseVisitor<Void> {
 
     @Override
     public Void visitFrame(VGraphParser.FrameContext ctx) {
-        visit(ctx.se);
+        for (VGraphParser.SentenceContext sentence : ctx.sentence()) {
+            visit(sentence);
+        }
         return null;
     }
 

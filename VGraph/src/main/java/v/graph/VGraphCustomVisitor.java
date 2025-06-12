@@ -2,11 +2,34 @@ package v.graph;
 
 import org.antlr.v4.runtime.tree.TerminalNode;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
 
 public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     private int indentLevel = 0;
     private final StringBuilder includes = new StringBuilder();
+    private final StringBuilder globalVars = new StringBuilder();
     private final StringBuilder functions = new StringBuilder();
+
+    // NUEVO: Mapa para rastrear tipos de variables
+    private final Map<String, String> variableTypes = new HashMap<>();
+
+    // Variables conflictivas con math.h que necesitan ser renombradas
+    private static final Set<String> MATH_CONFLICTS = new HashSet<>();
+    static {
+        MATH_CONFLICTS.add("y1");   // Función de Bessel
+        MATH_CONFLICTS.add("y0");   // Función de Bessel
+        MATH_CONFLICTS.add("j0");   // Función de Bessel
+        MATH_CONFLICTS.add("j1");   // Función de Bessel
+        MATH_CONFLICTS.add("gamma"); // Función gamma
+        MATH_CONFLICTS.add("exp");   // Función exponencial
+        MATH_CONFLICTS.add("log");   // Función logaritmo
+        MATH_CONFLICTS.add("sin");   // Función seno
+        MATH_CONFLICTS.add("cos");   // Función coseno
+        MATH_CONFLICTS.add("tan");   // Función tangente
+    }
 
     public VGraphCustomVisitor() {
         includes.append("#include <stdio.h>\n");
@@ -23,27 +46,119 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         return sb.toString();
     }
 
+    // Función para resolver conflictos de nombres
+    private String resolveVariableName(String varName) {
+        if (MATH_CONFLICTS.contains(varName)) {
+            return "var_" + varName;  // Prefijo para evitar conflictos
+        }
+        return varName;
+    }
+
+    // MODIFICADO: Método para verificar si una expresión es constante
+    private boolean isConstantExpression(String expr) {
+        if (expr.startsWith("\"") && expr.endsWith("\"")) {
+            return true; // Es un string (color)
+        }
+
+        // Verificar si es un número simple (entero o decimal)
+        try {
+            Double.parseDouble(expr);
+            return true;
+        } catch (NumberFormatException e) {
+            // No es un número simple
+        }
+
+        // Verificar si contiene funciones matemáticas o variables
+        if (expr.contains("cos(") || expr.contains("sin(") ||
+                expr.contains("+") || expr.contains("-") || expr.contains("*") || expr.contains("/") ||
+                expr.matches(".*[a-zA-Z_][a-zA-Z0-9_]*.*")) {
+            return false; // Contiene expresiones complejas
+        }
+
+        return true;
+    }
+
     @Override
     public String visitProgram(VGraphParser.ProgramContext ctx) {
         StringBuilder sb = new StringBuilder();
-        sb.append(includes.toString());
-
         StringBuilder mainCode = new StringBuilder();
+        StringBuilder mainInitializations = new StringBuilder();
 
-        // Procesar todas las sentencias
+        // PRIMERA PASADA: Recopilar declaraciones de variables globales
+        for (VGraphParser.SentenceContext sentence : ctx.sentence()) {
+            if (sentence.var_decl() != null) {
+                VGraphParser.Var_declContext varDeclCtx = sentence.var_decl();
+
+                if (varDeclCtx.expression() != null) {
+                    // Declaración con asignación: verificar si es constante
+                    String expr = visit(varDeclCtx.expression());
+                    String varName = resolveVariableName(varDeclCtx.id1.getText());
+                    String type = visit(varDeclCtx.type());
+
+                    // NUEVO: Registrar el tipo de la variable
+                    variableTypes.put(varName, type);
+
+                    if (isConstantExpression(expr)) {
+                        // Es constante, puede ir como global
+                        String globalVar = visit(varDeclCtx);
+                        globalVars.append(globalVar);
+                    } else {
+                        // No es constante, declarar como global sin inicializar
+                        globalVars.append(type).append(" ").append(varName).append(";\n");
+
+                        // MODIFICADO: Solo convertir a entero si el tipo es int
+                        if (type.equals("int") && expr.contains(".")) {
+                            try {
+                                double doubleValue = Double.parseDouble(expr);
+                                expr = String.valueOf((int) doubleValue);
+                            } catch (NumberFormatException e) {
+                                // Si no es un número directo, mantener la expresión
+                            }
+                        }
+                        // Si es double, mantener el valor decimal
+
+                        mainInitializations.append("    ").append(varName).append(" = ").append(expr).append(";\n");
+                    }
+                } else {
+                    // Declaración simple sin asignación
+                    String globalVar = visit(varDeclCtx);
+                    globalVars.append(globalVar);
+
+                    // NUEVO: Registrar tipos de variables múltiples
+                    String type = visit(varDeclCtx.type());
+                    String firstVar = resolveVariableName(varDeclCtx.id1.getText());
+                    variableTypes.put(firstVar, type);
+
+                    List<TerminalNode> allIds = varDeclCtx.ID();
+                    for (int i = 1; i < allIds.size(); i++) {
+                        String varName = resolveVariableName(allIds.get(i).getText());
+                        variableTypes.put(varName, type);
+                    }
+                }
+            }
+        }
+
+        // SEGUNDA PASADA: Procesar funciones y el resto del código
         for (VGraphParser.SentenceContext sentence : ctx.sentence()) {
             String result = visit(sentence);
             if (sentence.function() != null) {
                 functions.append(result);
-            } else {
+            } else if (sentence.var_decl() == null) {
                 mainCode.append(result);
             }
         }
 
-        // Agregar funciones definidas
+        // CONSTRUIR EL ARCHIVO FINAL
+        sb.append(includes.toString());
+
+        if (globalVars.length() > 0) {
+            sb.append("// Global variables\n");
+            sb.append(globalVars.toString());
+            sb.append("\n");
+        }
+
         sb.append(functions.toString());
 
-        // Generar main
         sb.append("int main() {\n");
         indentLevel++;
 
@@ -53,6 +168,12 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         sb.append(indent()).append("}\n\n");
 
         sb.append(indent()).append("clear_screen();\n\n");
+
+        if (mainInitializations.length() > 0) {
+            sb.append(indent()).append("// Variable initializations\n");
+            sb.append(mainInitializations.toString());
+            sb.append("\n");
+        }
 
         sb.append(mainCode.toString());
 
@@ -66,6 +187,89 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
 
         return sb.toString();
     }
+
+    // MODIFICADO: Método visitType con soporte para double
+    @Override
+    public String visitType(VGraphParser.TypeContext ctx) {
+        if (ctx.INT() != null) {
+            return "int";
+        } else if (ctx.COLOR() != null) {
+            return "char*";
+        } else if (ctx.DOUBLE() != null) {
+            return "double";  // NUEVO
+        }
+        return "int";
+    }
+
+    // MODIFICADO: Método visitVar_decl con soporte para double
+    @Override
+    public String visitVar_decl(VGraphParser.Var_declContext ctx) {
+        StringBuilder sb = new StringBuilder();
+        String type = visit(ctx.type());
+
+        if (ctx.expression() != null) {
+            String varName = resolveVariableName(ctx.id1.getText());
+            String value = visit(ctx.expression());
+
+            // MODIFICADO: Solo convertir a entero si el tipo es int
+            if (type.equals("int") && value.contains(".")) {
+                try {
+                    double doubleValue = Double.parseDouble(value);
+                    value = String.valueOf((int) doubleValue);
+                } catch (NumberFormatException e) {
+                    // Si no es un número directo, mantener la expresión
+                }
+            }
+            // Si es double, mantener el valor decimal tal como está
+
+            sb.append(type).append(" ").append(varName).append(" = ").append(value).append(";\n");
+        } else {
+            sb.append(type).append(" ");
+            String firstVar = resolveVariableName(ctx.id1.getText());
+            sb.append(firstVar);
+
+            List<TerminalNode> allIds = ctx.ID();
+            for (int i = 1; i < allIds.size(); i++) {
+                String varName = resolveVariableName(allIds.get(i).getText());
+                sb.append(", ").append(varName);
+            }
+            sb.append(";\n");
+        }
+
+        return sb.toString();
+    }
+
+    // MODIFICADO: Método visitVar_assign (sin cambios en lógica, pero documentado)
+    @Override
+    public String visitVar_assign(VGraphParser.Var_assignContext ctx) {
+        String expr = visit(ctx.expression());
+        String varName = resolveVariableName(ctx.ID().getText());
+
+        // NOTA: Aquí podrías usar variableTypes.get(varName) para obtener el tipo
+        // y decidir si convertir o no, pero por simplicidad mantenemos como estaba
+
+        if (expr.contains(".")) {
+            try {
+                double doubleValue = Double.parseDouble(expr);
+                // Solo convertir si sabemos que es int (opcional)
+                String varType = variableTypes.get(varName);
+                if ("int".equals(varType)) {
+                    expr = String.valueOf((int) doubleValue);
+                }
+            } catch (NumberFormatException e) {
+                // Si no es un número directo, mantener la expresión original
+            }
+        }
+
+        if (expr.startsWith("\"") && expr.endsWith("\"")) {
+            return indent() + varName + " = " + expr + ";\n";
+        } else {
+            return indent() + varName + " = " + expr + ";\n";
+        }
+    }
+
+    // Los demás métodos se mantienen iguales...
+    // (visitSentence, visitFrame, visitPrintln, etc. - sin cambios)
 
     @Override
     public String visitSentence(VGraphParser.SentenceContext ctx) {
@@ -104,7 +308,6 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         StringBuilder sb = new StringBuilder();
         sb.append(indent()).append("// === FRAME START ===\n");
 
-        // Procesar todas las sentencias dentro del frame
         for (VGraphParser.SentenceContext sentence : ctx.sentence()) {
             sb.append(visit(sentence));
         }
@@ -120,96 +323,14 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     }
 
     @Override
-    public String visitVar_decl(VGraphParser.Var_declContext ctx) {
-        StringBuilder sb = new StringBuilder();
-        String type = visit(ctx.type());
-
-        // Verificar si es declaración con asignación usando ctx.expression()
-        if (ctx.expression() != null) {
-            // Caso: (int) x = -1.5;
-            String varName = ctx.id1.getText(); // Usar id1 label
-            String value = visit(ctx.expression());
-
-            // Convertir valores decimales a enteros si el tipo es int
-            if (type.equals("int") && value.contains(".")) {
-                try {
-                    double doubleValue = Double.parseDouble(value);
-                    value = String.valueOf((int) doubleValue);
-                } catch (NumberFormatException e) {
-                    // Si no es un número directo, mantener la expresión
-                }
-            }
-
-            sb.append(indent()).append(type).append(" ").append(varName).append(" = ").append(value).append(";\n");
-        } else {
-            // Caso: (int) x, y, t;
-            sb.append(indent()).append(type).append(" ");
-
-            // Variable principal (id1)
-            sb.append(ctx.id1.getText());
-
-            // Variables adicionales (usar la lista completa de IDs)
-            List<TerminalNode> allIds = ctx.ID();
-            // El primer ID ya lo usamos (id1), los demás son adicionales
-            for (int i = 1; i < allIds.size(); i++) {
-                sb.append(", ").append(allIds.get(i).getText());
-            }
-
-            sb.append(";\n");
-        }
-
-        return sb.toString();
-    }
-
-    @Override
-    public String visitType(VGraphParser.TypeContext ctx) {
-        if (ctx.INT() != null) {
-            return "int";
-        } else if (ctx.COLOR() != null) {
-            return "char*"; // COLOR es char* para strings
-        }
-        return "int";
-    }
-
-    @Override
-    public String visitVar_assign(VGraphParser.Var_assignContext ctx) {
-        String expr = visit(ctx.expression());
-
-        // Convertir valores decimales a enteros si es necesario
-        if (expr.contains(".")) {
-            try {
-                double doubleValue = Double.parseDouble(expr);
-                expr = String.valueOf((int) doubleValue);
-            } catch (NumberFormatException e) {
-                // Si no es un número directo, mantener la expresión original
-            }
-        }
-
-        // Si la expresión es un color (string), mantenerla como string
-        if (expr.startsWith("\"") && expr.endsWith("\"")) {
-            return indent() + ctx.ID().getText() + " = " + expr + ";\n";
-        } else {
-            return indent() + ctx.ID().getText() + " = " + expr + ";\n";
-        }
-    }
-
-    @Override
     public String visitLoop_command(VGraphParser.Loop_commandContext ctx) {
         StringBuilder sb = new StringBuilder();
 
-        // Inicialización del loop (e1=var_assign)
         sb.append(visit(ctx.e1));
-
-        // Condición del while (e2=comparison)
-        sb.append(indent()).append("while ").append(visit(ctx.e2)).append(" {\n");
+        sb.append(indent()).append("while (").append(visit(ctx.e2)).append(") {\n");
         indentLevel++;
-
-        // Cuerpo del loop (e4=body)
         sb.append(visit(ctx.e4));
-
-        // Incremento (e3=increment_loop)
         sb.append(visit(ctx.e3));
-
         indentLevel--;
         sb.append(indent()).append("}\n");
 
@@ -228,13 +349,15 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     @Override
     public String visitIncrement_loop(VGraphParser.Increment_loopContext ctx) {
         String expr = visit(ctx.expression());
-        return indent() + ctx.ID().getText() + " = " + expr + ";\n";
+        String varName = resolveVariableName(ctx.ID().getText());
+        return indent() + varName + " = " + expr + ";\n";
     }
 
     @Override
     public String visitComparison(VGraphParser.ComparisonContext ctx) {
-        String left = visit(ctx.e1);  // operand
-        String right = visit(ctx.e2); // operandO
+        String left = visit(ctx.e1);
+        String right = visit(ctx.e2);
+
         String op = "";
         if (ctx.GT() != null) {
             op = ">";
@@ -257,68 +380,50 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
     public String visitConditional(VGraphParser.ConditionalContext ctx) {
         StringBuilder sb = new StringBuilder();
 
-        // IF principal - AGREGAR PARÉNTESIS AQUÍ
         sb.append(indent()).append("if (").append(visit(ctx.expression(0))).append(") {\n");
         indentLevel++;
-
-        // Procesar sentencias del IF principal
-        // La gramática de ANTLR agrupa automáticamente las sentencias por bloque
-        // según la estructura del parse tree
 
         List<VGraphParser.SentenceContext> allSentences = ctx.sentence();
         List<VGraphParser.ExpressionContext> allExpressions = ctx.expression();
 
-        // Determinar cuántas sentencias pertenecen a cada bloque
-        int totalBlocks = 1; // IF
-        if (ctx.ELSEIF() != null) totalBlocks += ctx.ELSEIF().size();
-        if (ctx.ELSE() != null) totalBlocks += 1;
+        int elseifCount = (ctx.ELSEIF() != null) ? ctx.ELSEIF().size() : 0;
+        boolean hasElse = (ctx.ELSE() != null);
 
-        // Dividir sentencias aproximadamente igual entre bloques
-        int sentencesPerBlock = allSentences.size() / totalBlocks;
-        int sentenceIndex = 0;
+        int totalSections = 1 + elseifCount + (hasElse ? 1 : 0);
+        int sentencesPerSection = allSentences.size() / totalSections;
+        int currentIndex = 0;
 
-        // Procesar sentencias del IF principal
-        int ifSentenceEnd = Math.min(sentencesPerBlock, allSentences.size());
-        for (int i = 0; i < ifSentenceEnd; i++) {
+        int ifEnd = Math.min(sentencesPerSection, allSentences.size());
+        for (int i = currentIndex; i < ifEnd; i++) {
             sb.append(visit(allSentences.get(i)));
-            sentenceIndex++;
         }
+        currentIndex = ifEnd;
 
         indentLevel--;
         sb.append(indent()).append("}");
 
-        // ELSEIF blocks - AGREGAR PARÉNTESIS AQUÍ
-        if (ctx.ELSEIF() != null) {
-            List<TerminalNode> elseifTokens = ctx.ELSEIF();
+        for (int elseifIndex = 0; elseifIndex < elseifCount; elseifIndex++) {
+            if (elseifIndex + 1 < allExpressions.size()) {
+                sb.append(" else if (").append(visit(allExpressions.get(elseifIndex + 1))).append(") {\n");
+                indentLevel++;
 
-            for (int elseifIndex = 0; elseifIndex < elseifTokens.size(); elseifIndex++) {
-                // La expresión del elseif (elseifIndex + 1 porque la primera expresión es del IF)
-                if (elseifIndex + 1 < allExpressions.size()) {
-                    sb.append(" else if (").append(visit(allExpressions.get(elseifIndex + 1))).append(") {\n");
-                    indentLevel++;
-
-                    // Procesar sentencias del elseif
-                    int elseifSentenceEnd = Math.min(sentenceIndex + sentencesPerBlock, allSentences.size());
-                    for (int i = sentenceIndex; i < elseifSentenceEnd; i++) {
-                        sb.append(visit(allSentences.get(i)));
-                        sentenceIndex++;
-                    }
-
-                    indentLevel--;
-                    sb.append(indent()).append("}");
+                int elseifEnd = Math.min(currentIndex + sentencesPerSection, allSentences.size());
+                for (int i = currentIndex; i < elseifEnd; i++) {
+                    sb.append(visit(allSentences.get(i)));
                 }
+                currentIndex = elseifEnd;
+
+                indentLevel--;
+                sb.append(indent()).append("}");
             }
         }
 
-        // ELSE block
-        if (ctx.ELSE() != null) {
+        if (hasElse) {
             sb.append(" else {\n");
             indentLevel++;
 
-            // Procesar las sentencias restantes para el ELSE
-            while (sentenceIndex < allSentences.size()) {
-                sb.append(visit(allSentences.get(sentenceIndex)));
-                sentenceIndex++;
+            for (int i = currentIndex; i < allSentences.size(); i++) {
+                sb.append(visit(allSentences.get(i)));
             }
 
             indentLevel--;
@@ -344,7 +449,6 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         StringBuilder sb = new StringBuilder();
         sb.append(visit(ctx.t1));
 
-        // Manejar operaciones de suma y resta
         List<VGraphParser.FactorContext> factors = ctx.factor();
         int plusCount = ctx.PLUS() != null ? ctx.PLUS().size() : 0;
         int minusCount = ctx.MINUS() != null ? ctx.MINUS().size() : 0;
@@ -366,7 +470,6 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         StringBuilder sb = new StringBuilder();
         sb.append(visit(ctx.t1));
 
-        // Manejar operaciones de multiplicación, división y módulo
         List<VGraphParser.TermContext> terms = ctx.term();
         int multCount = ctx.MULT() != null ? ctx.MULT().size() : 0;
         int divCount = ctx.DIV() != null ? ctx.DIV().size() : 0;
@@ -395,7 +498,7 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         } else if (ctx.BOOLEAN() != null) {
             return ctx.BOOLEAN().getText().equals("true") ? "1" : "0";
         } else if (ctx.ID() != null) {
-            return ctx.ID().getText();
+            return resolveVariableName(ctx.ID().getText());
         } else if (ctx.expression() != null) {
             return "(" + visit(ctx.expression()) + ")";
         } else if (ctx.cos() != null) {
@@ -435,7 +538,7 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
 
     @Override
     public String visitDraw(VGraphParser.DrawContext ctx) {
-        return visit(ctx.s); // shapeCall directamente
+        return visit(ctx.s);
     }
 
     @Override
@@ -475,20 +578,19 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         sb.append("void ").append(ctx.funID.getText()).append("(");
 
         if (ctx.arg1 != null) {
-            sb.append("int ").append(ctx.arg1.getText());
+            String arg1Name = resolveVariableName(ctx.arg1.getText());
+            sb.append("int ").append(arg1Name);
 
-            // Obtener todos los IDs y procesar los argumentos adicionales
             List<TerminalNode> allIds = ctx.ID();
-            // El primer ID es funID, el segundo es arg1, el resto son arg2
             for (int i = 2; i < allIds.size(); i++) {
-                sb.append(", int ").append(allIds.get(i).getText());
+                String argName = resolveVariableName(allIds.get(i).getText());
+                sb.append(", int ").append(argName);
             }
         }
 
         sb.append(") {\n");
         indentLevel++;
 
-        // Procesar todas las sentencias en la función
         List<VGraphParser.SentenceContext> allSentences = ctx.sentence();
         for (VGraphParser.SentenceContext stmt : allSentences) {
             sb.append(visit(stmt));
@@ -508,9 +610,7 @@ public class VGraphCustomVisitor extends VGraphBaseVisitor<String> {
         if (ctx.arg1 != null) {
             sb.append(visit(ctx.arg1));
 
-            // Obtener todas las expresiones y procesar los argumentos adicionales
             List<VGraphParser.ExpressionContext> allExpressions = ctx.expression();
-            // La primera expression es arg1, el resto son arg2
             for (int i = 1; i < allExpressions.size(); i++) {
                 sb.append(", ").append(visit(allExpressions.get(i)));
             }

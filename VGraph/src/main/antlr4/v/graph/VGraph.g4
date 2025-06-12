@@ -219,6 +219,7 @@ var_decl returns [ASTNode node]:
 type returns [ASTNode node]:
     INT {$node = new Type($INT.text);}
     | COLOR {$node = new Type($COLOR.text);}
+    | DOUBLE {$node = new Type($DOUBLE.text);}
 ;
 
 var_assign returns [ASTNode node, Token id, ASTNode value]:
@@ -276,6 +277,7 @@ term returns [ASTNode node]:
 ;
 
 // Tokens
+DOUBLE: 'double';
 DRAW: 'draw';
 SETCOLOR: 'setcolor';
 FRAME: 'frame';

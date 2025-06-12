@@ -30,6 +30,9 @@ public class VarDecl implements ASTNode {
                     case "color":
                         defaultValue = new vColor(); // color por defecto (negro)
                         break;
+                    case "double":  // NUEVO CASO
+                        defaultValue = 0.0;
+                        break;
                     default:
                         throw new RuntimeException("Tipo desconocido: " + typeName);
                 }
@@ -41,6 +44,8 @@ public class VarDecl implements ASTNode {
                 if (typeName.equals("int") && defaultValue instanceof Double) {
                     defaultValue = ((Double) defaultValue).intValue();
                 }
+                // NUEVO: No convertir si el tipo es double
+                // Si typeName es "double", mantener el valor como está
             }
 
             symbolTable.put(varName, defaultValue);
