@@ -288,28 +288,93 @@ public class MainIDE extends JFrame {
         }
     }
 
+    // MÉTODO saveFile() INTELIGENTE - Exactamente lo que pediste
     private void saveFile() {
         if (currentFile == null) {
-            int result = fileChooser.showSaveDialog(this);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                currentFile = fileChooser.getSelectedFile();
-                if (!currentFile.getName().endsWith("." + EXTENSION)) {
-                    currentFile = new File(currentFile.getAbsolutePath() + "." + EXTENSION);
-                }
-                setTitle("VGraph IDE - " + currentFile.getName());
-            } else {
-                return;
-            }
+            // OPCIÓN 1: Primera vez - directamente al diálogo de guardar
+            saveFileAs();
+        } else {
+            // OPCIÓN 2: Ya existe archivo - mostrar DOS opciones
+            showSaveOptionsDialog();
         }
+    }
 
+    // MÉTODO: Mostrar diálogo con DOS opciones cuando ya hay archivo guardado
+    private void showSaveOptionsDialog() {
+        String[] options = {
+                "Save Changes",
+                "Save As New File"
+        };
+
+        String message = "Current file: " + currentFile.getName() + "\n\n" +
+                "What would you like to do?";
+
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                message,
+                "Save Options",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0] // "Save Changes" como opción por defecto
+        );
+
+        if (choice == 0) {
+            // Opción 1: Guardar cambios en el archivo actual
+            saveChangesToCurrentFile();
+        } else if (choice == 1) {
+            // Opción 2: Guardar como archivo nuevo
+            saveFileAs();
+        }
+        // Si presiona X o Cancel, no hace nada
+    }
+
+    // MÉTODO: Guardar cambios en el archivo actual
+    private void saveChangesToCurrentFile() {
         try {
             FileWriter writer = new FileWriter(currentFile);
             writer.write(codeArea.getText());
             writer.close();
-            JOptionPane.showMessageDialog(this, "File saved successfully.",
-                    "Save", JOptionPane.INFORMATION_MESSAGE);
+
+            JOptionPane.showMessageDialog(this,
+                    "Changes saved successfully!",
+                    "Save Changes",
+                    JOptionPane.INFORMATION_MESSAGE);
+
         } catch (IOException e) {
-            showError("Error saving file: " + e.getMessage());
+            showError("Error saving changes: " + e.getMessage());
+        }
+    }
+
+    // MÉTODO: Guardar como nuevo archivo
+    private void saveFileAs() {
+        int result = fileChooser.showSaveDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+
+            // Asegurar que tenga la extensión correcta
+            if (!selectedFile.getName().endsWith("." + EXTENSION)) {
+                selectedFile = new File(selectedFile.getAbsolutePath() + "." + EXTENSION);
+            }
+
+            try {
+                FileWriter writer = new FileWriter(selectedFile);
+                writer.write(codeArea.getText());
+                writer.close();
+
+                // Actualizar archivo actual
+                currentFile = selectedFile;
+                setTitle("VGraph IDE - " + currentFile.getName());
+
+                JOptionPane.showMessageDialog(this,
+                        "File saved successfully!",
+                        "Save",
+                        JOptionPane.INFORMATION_MESSAGE);
+
+            } catch (IOException e) {
+                showError("Error saving file: " + e.getMessage());
+            }
         }
     }
 
@@ -381,7 +446,7 @@ public class MainIDE extends JFrame {
         }
     }
 
-    // MÉTODO PRINCIPAL - EJECUCIÓN AUTOMATIZADA EN FPGA - CORREGIDO
+    // MÉTODO PRINCIPAL - EJECUCIÓN AUTOMATIZADA EN FPGA - MEJORADO
     private void executeCode() {
         if (executionRunning) {
             showError("Execution already in progress. Stop current execution first.");
@@ -428,6 +493,7 @@ public class MainIDE extends JFrame {
                     allErrors.addAll(errorListener.getErrors());
 
                     if (allErrors.isEmpty()) {
+
                         SemanticValidator semanticValidator = new SemanticValidator();
                         semanticValidator.visit(tree);
                         allErrors.addAll(semanticValidator.getSemanticErrors());
@@ -438,7 +504,7 @@ public class MainIDE extends JFrame {
                         for (String error : allErrors) {
                             publish("• " + error);
                         }
-                        return false; // Indicar fallo
+                        return false;
                     }
 
                     publish("✅ Code validation successful!");
@@ -479,15 +545,16 @@ public class MainIDE extends JFrame {
                         publish("❌ Execution failed on FPGA");
                         return false;
                     }
-                    publish("✅ Program running on FPGA!");
-                    publish("📺 Check FPGA display for visual output");
-                    publish("⏹️ Press 'Stop Execution' to terminate");
+                    publish("✅ Program started on FPGA!");
+                    publish("📺 Monitoring execution output...");
+                    publish("📋 Program will automatically finish when completed");
+                    publish("⏹️ Or press 'Stop Execution' to terminate manually");
 
-                    return true; // Indicar éxito
+                    return true;
 
                 } catch (Exception e) {
                     publish("❌ ERROR: " + e.getMessage());
-                    return false; // Indicar fallo
+                    return false;
                 }
             }
 
@@ -497,7 +564,6 @@ public class MainIDE extends JFrame {
                     outputArea.append(message + "\n");
                     outputArea.setCaretPosition(outputArea.getDocument().getLength());
 
-                    // Colorear mensajes
                     if (message.contains("❌")) {
                         outputArea.setForeground(Color.RED);
                     } else if (message.contains("✅")) {
@@ -515,27 +581,24 @@ public class MainIDE extends JFrame {
             @Override
             protected void done() {
                 try {
-                    Boolean success = get(); // Obtener el resultado
+                    Boolean success = get();
 
-                    // SOLO deshabilitar Stop si hubo un error
-                    // Si fue exitoso, mantener Stop habilitado para permitir terminar el programa
                     if (!success) {
-                        // Hubo un error, re-habilitar botones normalmente
+                        // Hubo un error en la preparación, re-habilitar botones
                         runButton.setEnabled(true);
                         stopButton.setEnabled(false);
                         executionRunning = false;
-                    } else {
-                        // Ejecución exitosa, mantener Stop habilitado
-                        // runButton permanece deshabilitado hasta que se pare la ejecución
-                        // stopButton permanece habilitado
-                        // executionRunning permanece true
+                        currentFpgaProcess = null;
                     }
+                    // Si success == true, el monitoreo automático se encargará de
+                    // re-habilitar los botones cuando el proceso termine
 
                 } catch (Exception e) {
                     // Error en el worker, re-habilitar botones
                     runButton.setEnabled(true);
                     stopButton.setEnabled(false);
                     executionRunning = false;
+                    currentFpgaProcess = null;
                 }
             }
         };
@@ -605,6 +668,7 @@ public class MainIDE extends JFrame {
         }
     }
 
+    // MÉTODO MEJORADO: executeOnFPGA con monitoreo automático
     private boolean executeOnFPGA() {
         try {
             String host = config.getProperty("fpga.host");
@@ -618,7 +682,9 @@ public class MainIDE extends JFrame {
 
             currentFpgaProcess = pb.start();
 
-            // No esperamos a que termine porque puede ejecutar indefinidamente
+            // NUEVO: Monitorear el proceso en un hilo separado
+            monitorProcessExecution();
+
             return true;
         } catch (Exception e) {
             showError("Error during execution: " + e.getMessage());
@@ -626,8 +692,123 @@ public class MainIDE extends JFrame {
         }
     }
 
-    /// MÉTODO STOPEXECUTION MEJORADO CON MÚLTIPLES ESTRATEGIAS
+    // NUEVO MÉTODO: Monitorear la ejecución del proceso
+    private void monitorProcessExecution() {
+        Thread monitorThread = new Thread(() -> {
+            try {
+                // Capturar salida del proceso
+                BufferedReader outputReader = new BufferedReader(
+                        new InputStreamReader(currentFpgaProcess.getInputStream()));
+                BufferedReader errorReader = new BufferedReader(
+                        new InputStreamReader(currentFpgaProcess.getErrorStream()));
+
+                // Leer salida en tiempo real
+                SwingWorker<Void, String> outputWorker = new SwingWorker<Void, String>() {
+                    @Override
+                    protected Void doInBackground() throws Exception {
+                        String line;
+
+                        // Leer stdout
+                        while ((line = outputReader.readLine()) != null && !isCancelled()) {
+                            publish("📺 OUTPUT: " + line);
+                        }
+
+                        // Leer stderr si hay errores
+                        while ((line = errorReader.readLine()) != null && !isCancelled()) {
+                            publish("⚠️ ERROR: " + line);
+                        }
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void process(java.util.List<String> chunks) {
+                        for (String message : chunks) {
+                            SwingUtilities.invokeLater(() -> {
+                                outputArea.append(message + "\n");
+                                outputArea.setCaretPosition(outputArea.getDocument().getLength());
+
+                                if (message.contains("ERROR")) {
+                                    outputArea.setForeground(Color.RED);
+                                } else {
+                                    outputArea.setForeground(Color.BLACK);
+                                }
+                            });
+                        }
+                    }
+                };
+
+                outputWorker.execute();
+
+                // Esperar a que termine el proceso
+                int exitCode = currentFpgaProcess.waitFor();
+
+                // Cancelar el worker de salida
+                outputWorker.cancel(true);
+
+                // Actualizar interfaz en el hilo de Swing
+                SwingUtilities.invokeLater(() -> {
+                    handleProcessCompletion(exitCode);
+                });
+
+            } catch (InterruptedException e) {
+                // El proceso fue interrumpido (probablemente por Stop)
+                SwingUtilities.invokeLater(() -> {
+                    outputArea.append("⚠️ Process was interrupted\n");
+                    outputArea.setForeground(new Color(255, 140, 0));
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> {
+                    outputArea.append("❌ Error monitoring process: " + e.getMessage() + "\n");
+                    outputArea.setForeground(Color.RED);
+                    handleProcessCompletion(-1);
+                });
+            }
+        });
+
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+    }
+
+    // NUEVO MÉTODO: Manejar la finalización del proceso
+    private void handleProcessCompletion(int exitCode) {
+        executionRunning = false;
+        currentFpgaProcess = null;
+
+        // Re-habilitar botones
+        runButton.setEnabled(true);
+        stopButton.setEnabled(false);
+
+        // Mostrar mensaje de finalización
+        outputArea.append("\n" + "=".repeat(50) + "\n");
+
+        if (exitCode == 0) {
+            outputArea.append("✅ PROGRAM COMPLETED SUCCESSFULLY\n");
+            outputArea.append("📊 Exit code: " + exitCode + "\n");
+            outputArea.append("🎯 Execution finished normally\n");
+            outputArea.setForeground(new Color(0, 150, 0));
+        } else if (exitCode == -1) {
+            outputArea.append("❌ PROGRAM EXECUTION ERROR\n");
+            outputArea.append("🔧 Check your VGraph code for runtime errors\n");
+            outputArea.setForeground(Color.RED);
+        } else {
+            outputArea.append("⚠️ PROGRAM FINISHED WITH WARNINGS\n");
+            outputArea.append("📊 Exit code: " + exitCode + "\n");
+            outputArea.append("💡 Program terminated but may have encountered issues\n");
+            outputArea.setForeground(new Color(255, 140, 0));
+        }
+
+        outputArea.append("🔄 Ready for next execution - Press 'Run on FPGA' again\n");
+        outputArea.append("=".repeat(50) + "\n");
+    }
+
+    // MÉTODO stopExecution SIMPLIFICADO
     private void stopExecution() {
+        if (!executionRunning) {
+            showError("No execution in progress.");
+            return;
+        }
+
         outputArea.append("\n🛑 Stopping execution...\n");
         outputArea.setForeground(new Color(255, 140, 0));
 
@@ -635,158 +816,52 @@ public class MainIDE extends JFrame {
 
         // ESTRATEGIA 1: Matar proceso local
         if (currentFpgaProcess != null && currentFpgaProcess.isAlive()) {
-            outputArea.append("🔸 Terminating local SSH process...\n");
+            outputArea.append("🔸 Terminating SSH connection...\n");
             currentFpgaProcess.destroyForcibly();
 
             try {
-                // Esperar hasta 3 segundos para que termine
                 boolean terminated = currentFpgaProcess.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
                 if (terminated) {
                     outputArea.append("✅ Local process terminated\n");
                     stopped = true;
-                } else {
-                    outputArea.append("⚠️ Local process did not terminate gracefully\n");
                 }
             } catch (InterruptedException e) {
-                outputArea.append("⚠️ Interrupted while waiting for local process\n");
+                outputArea.append("⚠️ Interrupted while waiting for process\n");
             }
         }
 
-        // ESTRATEGIA 2: Matar procesos remotos con múltiples comandos
+        // ESTRATEGIA 2: Matar procesos remotos
         try {
             String host = config.getProperty("fpga.host");
             String user = config.getProperty("fpga.user");
             String password = config.getProperty("fpga.password");
 
-            outputArea.append("🔸 Sending kill signals to FPGA...\n");
+            outputArea.append("🔸 Sending kill signal to FPGA...\n");
 
-            // Lista de comandos para matar el proceso
-            String[] killCommands = {
-                    "sudo pkill -TERM main",           // Señal TERM primero (graceful)
-                    "sudo pkill -KILL main",           // Señal KILL si TERM no funciona
-                    "sudo pkill -f './main'",          // Matar por nombre completo
-                    "sudo pkill -f 'main'",            // Matar por nombre parcial
-                    "sudo killall main",               // killall como backup
-                    "sudo killall -9 main",            // killall con SIGKILL
-                    "sudo ps aux | grep main | grep -v grep | awk '{print $2}' | xargs sudo kill -9"  // Buscar y matar por PID
-            };
+            String killCommand = "sudo pkill -TERM main; sudo pkill -KILL main";
 
-            for (int i = 0; i < killCommands.length; i++) {
-                String command = killCommands[i];
-                outputArea.append("🔹 Executing: " + command + "\n");
+            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
+                    "ssh", "-o", "ConnectTimeout=5", user + "@" + host, killCommand);
 
-                ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
-                        "ssh", "-o", "ConnectTimeout=5", user + "@" + host, command);
+            Process killProcess = pb.start();
+            boolean finished = killProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
 
-                try {
-                    Process killProcess = pb.start();
-                    boolean finished = killProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
-
-                    if (finished) {
-                        int exitCode = killProcess.exitValue();
-                        if (exitCode == 0) {
-                            outputArea.append("✅ Kill command successful\n");
-                            stopped = true;
-                            // Probar unos comandos más para asegurar
-                            if (i < 3) continue;
-                            else break;
-                        } else {
-                            outputArea.append("⚠️ Kill command failed (exit code: " + exitCode + ")\n");
-                        }
-                    } else {
-                        outputArea.append("⚠️ Kill command timed out\n");
-                        killProcess.destroyForcibly();
-                    }
-                } catch (Exception e) {
-                    outputArea.append("❌ Error executing kill command: " + e.getMessage() + "\n");
-                }
-
-                // Pequeña pausa entre comandos
-                Thread.sleep(500);
+            if (finished && killProcess.exitValue() == 0) {
+                outputArea.append("✅ Remote process terminated\n");
+                stopped = true;
             }
 
         } catch (Exception e) {
             outputArea.append("❌ Error during remote kill: " + e.getMessage() + "\n");
         }
 
-        // ESTRATEGIA 3: Verificar que realmente se detuvo
-        try {
-            outputArea.append("🔸 Verifying process termination...\n");
-
-            String host = config.getProperty("fpga.host");
-            String user = config.getProperty("fpga.user");
-            String password = config.getProperty("fpga.password");
-
-            String checkCommand = "ps aux | grep main | grep -v grep";
-
-            ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
-                    "ssh", "-o", "ConnectTimeout=5", user + "@" + host, checkCommand);
-
-            Process checkProcess = pb.start();
-            boolean finished = checkProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
-
-            if (finished) {
-                // Leer la salida para ver si hay procesos main corriendo
-                BufferedReader reader = new BufferedReader(new InputStreamReader(checkProcess.getInputStream()));
-                String line;
-                boolean processFound = false;
-
-                while ((line = reader.readLine()) != null) {
-                    if (line.contains("main") && !line.contains("grep")) {
-                        processFound = true;
-                        outputArea.append("⚠️ Process still running: " + line + "\n");
-                    }
-                }
-
-                if (!processFound) {
-                    outputArea.append("✅ No main processes found - execution stopped\n");
-                    stopped = true;
-                } else {
-                    outputArea.append("❌ Some processes may still be running\n");
-                }
-            }
-
-        } catch (Exception e) {
-            outputArea.append("⚠️ Could not verify process termination: " + e.getMessage() + "\n");
-        }
-
-        // ESTRATEGIA 4: Como último recurso, reiniciar framebuffer
-        if (!stopped) {
-            try {
-                outputArea.append("🔸 Attempting framebuffer reset as last resort...\n");
-
-                String host = config.getProperty("fpga.host");
-                String user = config.getProperty("fpga.user");
-                String password = config.getProperty("fpga.password");
-
-                String resetCommand = "sudo systemctl restart display-manager || sudo fuser -k /dev/fb0 || sudo echo 'Framebuffer reset attempted'";
-
-                ProcessBuilder pb = new ProcessBuilder("sshpass", "-p", password,
-                        "ssh", "-o", "ConnectTimeout=10", user + "@" + host, resetCommand);
-
-                Process resetProcess = pb.start();
-                boolean finished = resetProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
-
-                if (finished) {
-                    outputArea.append("✅ Framebuffer reset command executed\n");
-                } else {
-                    outputArea.append("⚠️ Framebuffer reset timed out\n");
-                    resetProcess.destroyForcibly();
-                }
-
-            } catch (Exception e) {
-                outputArea.append("❌ Error during framebuffer reset: " + e.getMessage() + "\n");
-            }
-        }
-
-        // Siempre re-habilitar botones al final
-        outputArea.append("\n🏁 Stop execution completed\n");
+        // Actualizar estado
+        outputArea.append("\n🏁 Manual stop completed\n");
         if (stopped) {
             outputArea.append("✅ Execution successfully terminated\n");
             outputArea.setForeground(new Color(0, 150, 0));
         } else {
-            outputArea.append("⚠️ Execution may not have been completely terminated\n");
-            outputArea.append("💡 Try unplugging and reconnecting FPGA if display is still active\n");
+            outputArea.append("⚠️ Process may still be running on FPGA\n");
             outputArea.setForeground(new Color(255, 140, 0));
         }
 

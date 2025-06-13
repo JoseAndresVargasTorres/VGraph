@@ -16,7 +16,7 @@ program:
     {
         Map<String, Object> symbolTable = new HashMap<String,Object>();
         for(ASTNode n : runBody){
-            n.execute(symbolTable);
+            //n.execute(symbolTable);
         }
     }
 ;
